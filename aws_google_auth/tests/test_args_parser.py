@@ -22,8 +22,14 @@ class TestPythonFailOnVersion(unittest.TestCase):
         self.assertFalse(parser.keyring)
         self.assertFalse(parser.resolve_aliases)
         self.assertFalse(parser.disable_u2f, None)
+        self.assertFalse(parser.browser)
+        self.assertFalse(parser.browser_capture)
 
         self.assertEqual(parser.duration, None)
+        self.assertEqual(parser.browser_timeout, 600)
+        self.assertEqual(parser.firefox_executable, None)
+        self.assertEqual(parser.firefox_profile, None)
+        self.assertEqual(parser.geckodriver_executable, 'geckodriver')
         self.assertEqual(parser.auto_duration, False)
         self.assertEqual(parser.idp_id, None)
         self.assertEqual(parser.sp_id, None)
@@ -40,7 +46,31 @@ class TestPythonFailOnVersion(unittest.TestCase):
 
         # Assert the size of the parameter so that new parameters trigger a review of this function
         # and the appropriate defaults are added here to track backwards compatibility in the future.
-        self.assertEqual(len(vars(parser)), 21)
+        self.assertEqual(len(vars(parser)), 27)
+
+    def test_browser(self):
+        parser = parse_args(['--browser'])
+
+        self.assertTrue(parser.browser)
+
+    def test_browser_capture(self):
+        parser = parse_args([
+            '--browser-capture',
+            '--browser-timeout', '120',
+            '--firefox-executable', '/usr/bin/firefox',
+            '--firefox-profile', '/home/me/.mozilla/firefox/default',
+            '--geckodriver-executable', '/usr/bin/geckodriver',
+        ])
+
+        self.assertTrue(parser.browser_capture)
+        self.assertEqual(parser.browser_timeout, 120)
+        self.assertEqual(parser.firefox_executable, '/usr/bin/firefox')
+        self.assertEqual(parser.firefox_profile, '/home/me/.mozilla/firefox/default')
+        self.assertEqual(parser.geckodriver_executable, '/usr/bin/geckodriver')
+
+    def test_browser_modes_are_mutually_exclusive(self):
+        with self.assertRaises(SystemExit):
+            parse_args(['--browser', '--browser-capture'])
 
     def test_username(self):
 
