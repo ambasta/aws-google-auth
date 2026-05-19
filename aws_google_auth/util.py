@@ -1,13 +1,8 @@
-#!/usr/bin/env python
-
-from __future__ import print_function
-
 import getpass
 import os
 import sys
 from collections import OrderedDict
 
-from six.moves import input
 from tabulate import tabulate
 
 
@@ -15,20 +10,27 @@ class Util:
 
     @staticmethod
     def get_input(prompt):
-        return input(prompt)
+        return input(prompt).strip()
+
+    @staticmethod
+    def strip_if_string(value):
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
     @staticmethod
     def pick_a_role(roles, aliases=None, account=None):
         if account:
-            filtered_roles = {role: principal for role, principal in roles.items() if(account in role)}
+            filtered_roles = {role: principal for role, principal in roles.items() if (account in role)}
         else:
             filtered_roles = roles
 
         if aliases:
             enriched_roles = {}
             for role, principal in filtered_roles.items():
+                account_id = role.split(':')[4]
                 enriched_roles[role] = [
-                    aliases[role.split(':')[4]],
+                    aliases.get(account_id, account_id),
                     role.split('role/')[1],
                     principal
                 ]
@@ -85,10 +87,7 @@ class Util:
 
     @staticmethod
     def unicode_to_string_if_needed(object):
-        if "unicode" in str(object.__class__):
-            return object.encode('utf-8')
-        else:
-            return object
+        return object
 
     @staticmethod
     def get_password(prompt):

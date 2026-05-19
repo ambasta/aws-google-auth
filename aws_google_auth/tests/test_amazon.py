@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import unittest
-import mock
+from unittest import mock
 
 from aws_google_auth import amazon
 from aws_google_auth import configuration

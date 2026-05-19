@@ -5,7 +5,7 @@ import boto3
 import os
 import re
 
-from datetime import datetime
+from datetime import UTC, datetime
 from threading import Thread
 
 from botocore.exceptions import ClientError, ProfileNotFound
@@ -167,9 +167,9 @@ class Amazon:
             not_before_str = conditions[0].get('NotBefore')
             not_on_or_after_str = conditions[0].get('NotOnOrAfter')
 
-            now = datetime.utcnow()
-            not_before = datetime.strptime(not_before_str, "%Y-%m-%dT%H:%M:%S.%fZ")
-            not_on_or_after = datetime.strptime(not_on_or_after_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+            now = datetime.now(UTC)
+            not_before = datetime.strptime(not_before_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
+            not_on_or_after = datetime.strptime(not_on_or_after_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
 
             if not_before <= now < not_on_or_after:
                 return True
