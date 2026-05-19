@@ -60,23 +60,25 @@ where the last bit (after the ``=``) is the IDP ID.
 Installation
 ------------
 
-You can install quite easily via ``pip``, if you want to have it on your
+AWS-Google-Auth requires Python 3.14 or newer.
+
+You can install quite easily via ``uv``, if you want to have it on your
 local system:
 
 .. code:: shell
 
     # For basic installation
-    localhost$ sudo pip install aws-google-auth
+    localhost$ uv tool install --python 3.14 aws-google-auth
 
     # For installation with U2F support
-    localhost$ sudo pip install aws-google-auth[u2f]
+    localhost$ uv tool install --python 3.14 "aws-google-auth[u2f]"
 
 
 *Note* If using ZSH you will need to quote the install, as below:
 
 .. code:: shell
 
-   localhost$ sudo pip install "aws-google-auth[u2f]"
+   localhost$ uv tool install --python 3.14 "aws-google-auth[u2f]"
 
 If you don't want to have the tool installed on your local system, or if
 you prefer to isolate changes, there is a Dockerfile provided, which you
@@ -94,22 +96,47 @@ Development
 -----------
 
 If you want to develop the AWS-Google-Auth tool itself, we thank you! In order
-to help you get rolling, you'll want to install locally with pip. Of course,
-you can use your own regular workflow, with tools like `virtualenv <https://virtualenv.pypa.io/en/stable/>`__.
+to help you get rolling, you'll want to install locally with uv.
 
 .. code:: shell
 
     # Install (without U2F support)
-    pip install -e .
+    uv sync --dev
 
     # Install (with U2F support)
-    pip install -e .[u2f]
+    uv sync --dev --extra u2f
+
+    # Install (with Firefox browser SAML capture support)
+    uv sync --dev --extra browser
+
+    # Run tests
+    uv run pytest
 
 We welcome you to review our `code of conduct <CODE_OF_CONDUCT.md>`__ and
 `contributing <CONTRIBUTING.md>`__ documents.
 
 Usage
 -----
+
+If Google serves the modern JavaScript sign-in flow, use Firefox browser
+capture. Complete Google sign-in in the Firefox window; the CLI will capture
+the SAML assertion from the browser's POST to AWS.
+
+.. code:: shell
+
+    uv run aws-google-auth -p bamnr -I C03023tpd -S 545530577134 -R ap-south-1 --browser-capture --firefox-executable /usr/bin/firefox
+
+To reuse sign-in state from an existing Firefox profile, pass the profile
+directory. The tool copies sign-in state into a temporary profile, so it does
+not close tabs from your live Firefox session:
+
+.. code:: shell
+
+    uv run aws-google-auth -p bamnr -I C03023tpd -S 545530577134 -R ap-south-1 --browser-capture --firefox-executable /usr/bin/firefox --firefox-profile ~/.mozilla/firefox/your-profile.default-release
+
+This mode talks directly to geckodriver with the W3C WebDriver HTTP protocol
+and requires Firefox plus geckodriver. Install geckodriver and make sure it is
+on ``PATH`` or pass ``--geckodriver-executable /path/to/geckodriver``.
 
 .. code:: shell
 
