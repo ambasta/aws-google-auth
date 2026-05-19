@@ -2,9 +2,14 @@
 *.egg-info
 .eggs/
 *.pyc
+.coverage
+.pytest_cache/
 dist
 build/
 .idea/
 Pipfile
 Pipfile.lock
 venv/*
+.venv/
+saml.html
+failure.html

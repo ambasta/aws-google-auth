@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aws-google-auth"
+dynamic = ["version"]
+description = "Acquire AWS STS (temporary) credentials via Google Apps SAML Single Sign On"
+readme = "README.rst"
+requires-python = ">=3.14"
+license = "MIT"
+authors = [
+    { name = "Colin Panisset", email = "colin.panisset@cevo.com.au" },
+]
+keywords = ["saml", "sso", "federated identity", "google", "aws", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration :: Authentication/Directory",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "beautifulsoup4",
+    "boto3",
+    "filelock",
+    "keyring",
+    "keyrings.alt",
+    "lxml",
+    "Pillow",
+    "requests",
+    "tabulate",
+    "tzlocal",
+]
+
+[project.optional-dependencies]
+u2f = ["python-u2flib-host"]
+browser = []
+
+[project.urls]
+Homepage = "https://github.com/cevoaustralia/aws-google-auth"
+
+[project.scripts]
+aws-google-auth = "aws_google_auth:main"
+
+[dependency-groups]
+dev = [
+    "build",
+    "coverage",
+    "coveralls",
+    "flake8",
+    "Pygments",
+    "pytest",
+    "restructuredtext-lint",
+    "twine",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "aws_google_auth._version.__version__" }
+
+[tool.setuptools.packages.find]
+exclude = ["contrib", "docs", "tests", "aws_google_auth.tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["aws_google_auth/tests"]
