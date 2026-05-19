@@ -1,7 +1,7 @@
 import unittest
 from argparse import Namespace
 
-from mock import call, patch, Mock, MagicMock
+from unittest.mock import call, patch, Mock, MagicMock
 
 import aws_google_auth
 
@@ -44,54 +44,86 @@ class TestInit(unittest.TestCase):
 
         self.assertEqual([call()], exit_if_unsupported_python.mock_calls)
 
-        self.assertEqual([call(Namespace(ask_role=False,
-                                         keyring=False,
-                                         disable_u2f=False,
-                                         duration=None,
-                                         auto_duration=False,
-                                         idp_id=None,
-                                         profile=None,
-                                         region=None,
-                                         resolve_aliases=False,
-                                         role_arn=None,
-                                         save_failure_html=False,
-                                         save_saml_flow=False,
-                                         saml_cache=True,
-                                         saml_assertion=None,
-                                         sp_id=None,
-                                         log_level='warn',
-                                         print_creds=False,
-                                         username=None,
-                                         quiet=False,
-                                         bg_response=None,
-                                         account=None))
-                          ],
-                         resolve_config.mock_calls)
+        expected_args = Namespace(ask_role=False,
+                                  keyring=False,
+                                  disable_u2f=False,
+                                  duration=None,
+                                  auto_duration=False,
+                                  idp_id=None,
+                                  profile=None,
+                                  region=None,
+                                  resolve_aliases=False,
+                                  role_arn=None,
+                                  save_failure_html=False,
+                                  save_saml_flow=False,
+                                  saml_cache=True,
+                                  saml_assertion=None,
+                                  browser=False,
+                                  browser_capture=False,
+                                  browser_timeout=600,
+                                  firefox_executable=None,
+                                  firefox_profile=None,
+                                  geckodriver_executable='geckodriver',
+                                  sp_id=None,
+                                  log_level='warn',
+                                  print_creds=False,
+                                  username=None,
+                                  quiet=False,
+                                  bg_response=None,
+                                  account=None)
 
-        self.assertEqual([call(Namespace(ask_role=False,
-                                         keyring=False,
-                                         disable_u2f=False,
-                                         duration=None,
-                                         auto_duration=False,
-                                         idp_id=None,
-                                         profile=None,
-                                         region=None,
-                                         resolve_aliases=False,
-                                         role_arn=None,
-                                         save_failure_html=False,
-                                         save_saml_flow=False,
-                                         saml_cache=True,
-                                         saml_assertion=None,
-                                         sp_id=None,
-                                         log_level='warn',
-                                         print_creds=False,
-                                         username=None,
-                                         quiet=False,
-                                         bg_response=None,
-                                         account=None),
-                               mock_config)
-                          ],
-                         process_auth.mock_calls)
+        self.assertEqual([call(expected_args)], resolve_config.mock_calls)
+        self.assertEqual([call(expected_args, mock_config)], process_auth.mock_calls)
+
+    def test_extract_saml_assertion_from_raw_value(self):
+        self.assertEqual("YWJjZA==", aws_google_auth.extract_saml_assertion(" YWJjZA== "))
+
+    def test_extract_saml_assertion_from_post_body(self):
+        self.assertEqual(
+            "YWJjZA==",
+            aws_google_auth.extract_saml_assertion("RelayState=foo&SAMLResponse=YWJjZA%3D%3D"),
+        )
+
+    def test_extract_saml_assertion_from_html(self):
+        self.assertEqual(
+            "YWJjZA==",
+            aws_google_auth.extract_saml_assertion('<input type="hidden" name="SAMLResponse" value="YWJjZA==">'),
+        )
+
+    def test_decode_saml_assertion(self):
+        self.assertEqual(b"abcd", aws_google_auth.decode_saml_assertion("YWJjZA=="))
+
+    @patch('aws_google_auth.browser_capture.capture_saml_response_with_firefox', spec=True)
+    def test_capture_browser_saml_assertion(self, mock_capture):
+        mock_config = Mock()
+        mock_config.idp_id = "idp"
+        mock_config.sp_id = "sp"
+        mock_config.username = "user@example.com"
+        mock_capture.return_value = {
+            "saml_response": "YWJjZA==",
+            "account_aliases": {"190020191201": "delhivery"},
+        }
+
+        self.assertEqual(
+            (b"abcd", {"190020191201": "delhivery"}),
+            aws_google_auth.capture_browser_saml_assertion(
+                mock_config,
+                timeout_seconds=30,
+                firefox_executable="/usr/bin/firefox",
+                firefox_profile="/tmp/profile",
+                geckodriver_executable="/usr/bin/geckodriver",
+            ),
+        )
+        expected_url = "https://accounts.google.com/o/saml2/initsso?idpid=idp&spid=sp&forceauthn=false"
+        self.assertEqual(
+            [call(expected_url,
+                  timeout_seconds=30,
+                  executable_path="/usr/bin/firefox",
+                  profile_path="/tmp/profile",
+                  geckodriver_executable="/usr/bin/geckodriver",
+                  google_username="user@example.com")],
+            mock_capture.mock_calls,
+        )
 
     @patch('aws_google_auth.util', spec=True)
     @patch('aws_google_auth.amazon', spec=True)

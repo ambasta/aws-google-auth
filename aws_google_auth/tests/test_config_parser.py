@@ -1,8 +1,7 @@
 import os
 import unittest
 
-import mock
-from nose.tools import nottest
+from unittest import mock
 
 from aws_google_auth import resolve_config, parse_args
 
@@ -53,6 +52,34 @@ class TestUsernameProcessing(unittest.TestCase):
         self.assertEqual('user@gmail.com', config.username)
 
 
+class TestFirefoxProfileProcessing(unittest.TestCase):
+
+    def test_default(self):
+        args = parse_args([])
+        config = resolve_config(args)
+        self.assertEqual(None, config.firefox_profile)
+
+    def test_cli_param_supplied(self):
+        args = parse_args(['--firefox-profile', '/home/me/.mozilla/firefox/default'])
+        config = resolve_config(args)
+        self.assertEqual('/home/me/.mozilla/firefox/default', config.firefox_profile)
+
+    def test_cli_param_supplied_with_whitespace(self):
+        args = parse_args(['--firefox-profile', ' /home/me/.mozilla/firefox/default '])
+        config = resolve_config(args)
+        self.assertEqual('/home/me/.mozilla/firefox/default', config.firefox_profile)
+
+    @mock.patch.dict(os.environ, {'AWS_GOOGLE_AUTH_FIREFOX_PROFILE': '/tmp/firefox-profile'})
+    def test_with_environment(self):
+        args = parse_args([])
+        config = resolve_config(args)
+        self.assertEqual('/tmp/firefox-profile', config.firefox_profile)
+
+        args = parse_args(['--firefox-profile', '/home/me/.mozilla/firefox/default'])
+        config = resolve_config(args)
+        self.assertEqual('/home/me/.mozilla/firefox/default', config.firefox_profile)
+
+
 class TestDurationProcessing(unittest.TestCase):
 
     def test_default(self):
@@ -94,6 +121,11 @@ class TestIDPProcessing(unittest.TestCase):
         config = resolve_config(args)
         self.assertEqual("kjl2342", config.idp_id)
 
+    def test_cli_param_supplied_with_whitespace(self):
+        args = parse_args(['-I', " kjl2342 "])
+        config = resolve_config(args)
+        self.assertEqual("kjl2342", config.idp_id)
+
     @mock.patch.dict(os.environ, {'GOOGLE_IDP_ID': 'adsfasf233423'})
     def test_with_environment(self):
         args = parse_args([])
@@ -117,6 +149,11 @@ class TestSPProcessing(unittest.TestCase):
         config = resolve_config(args)
         self.assertEqual("kjl2342", config.sp_id)
 
+    def test_cli_param_supplied_with_whitespace(self):
+        args = parse_args(['-S', " kjl2342 "])
+        config = resolve_config(args)
+        self.assertEqual("kjl2342", config.sp_id)
+
     @mock.patch.dict(os.environ, {'GOOGLE_SP_ID': 'adsfasf233423'})
     def test_with_environment(self):
         args = parse_args([])
@@ -130,7 +167,7 @@ class TestSPProcessing(unittest.TestCase):
 
 class TestRegionProcessing(unittest.TestCase):
 
-    @nottest
+    @unittest.skip("Region defaults are resolved interactively at runtime.")
     def test_default(self):
         args = parse_args([])
         config = resolve_config(args)
@@ -183,7 +220,7 @@ class TestAskRoleProcessing(unittest.TestCase):
         config = resolve_config(args)
         self.assertTrue(config.ask_role)
 
-    @nottest
+    @unittest.skip("Environment boolean parsing is not implemented.")
     @mock.patch.dict(os.environ, {'AWS_ASK_ROLE': 'true'})
     def test_with_environment(self):
         args = parse_args([])
@@ -203,7 +240,7 @@ class TestU2FDisabledProcessing(unittest.TestCase):
         config = resolve_config(args)
         self.assertTrue(config.u2f_disabled)
 
-    @nottest
+    @unittest.skip("Environment boolean parsing is not implemented.")
     @mock.patch.dict(os.environ, {'U2F_DISABLED': 'true'})
     def test_with_environment(self):
         args = parse_args([])
@@ -223,7 +260,7 @@ class TestResolveAliasesProcessing(unittest.TestCase):
         config = resolve_config(args)
         self.assertTrue(config.resolve_aliases)
 
-    @nottest
+    @unittest.skip("Environment boolean parsing is not implemented.")
     @mock.patch.dict(os.environ, {'RESOLVE_AWS_ALIASES': 'true'})
     def test_with_environment(self):
         args = parse_args([])
@@ -243,7 +280,7 @@ class TestBgResponseProcessing(unittest.TestCase):
         config = resolve_config(args)
         self.assertEqual(config.bg_response, 'foo')
 
-    @nottest
+    @unittest.skip("Environment bg_response behavior is covered by CLI precedence tests.")
     @mock.patch.dict(os.environ, {'GOOGLE_BG_RESPONSE': 'foo'})
     def test_with_environment(self):
         args = parse_args([])
@@ -253,7 +290,7 @@ class TestBgResponseProcessing(unittest.TestCase):
 
 class TestAccountProcessing(unittest.TestCase):
 
-    @nottest
+    @unittest.skip("Account defaults to an empty string in configuration.")
     def test_default(self):
         args = parse_args([])
         config = resolve_config(args)

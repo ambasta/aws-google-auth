@@ -1,14 +1,8 @@
-#!/usr/bin/env python
-
+import configparser
 import os
 
 import botocore.session
 import filelock
-
-try:
-    from backports import configparser
-except ImportError:
-    import configparser
 
 from aws_google_auth import util
 from aws_google_auth import amazon
@@ -39,6 +33,7 @@ class Configuration(object):
         self.quiet = False
         self.bg_response = None
         self.account = ""
+        self.firefox_profile = None
 
     # For the "~/.aws/config" file, we use the format "[profile testing]"
     # for the 'testing' profile. The credential file will just be "[testing]"
@@ -125,12 +120,8 @@ class Configuration(object):
         assert (self.username.__class__ is str), "Expected username to be a string. Got {}.".format(self.username.__class__)
 
         # password
-        try:
-            assert (type(self.password) in [str, unicode]), "Expected password to be a string. Got {}.".format(
-                type(self.password))
-        except NameError:
-            assert (type(self.password) is str), "Expected password to be a string. Got {}.".format(
-                type(self.password))
+        assert (type(self.password) is str), "Expected password to be a string. Got {}.".format(
+            type(self.password))
 
         # role_arn (Can be blank, we'll just prompt)
         if self.role_arn is not None:
@@ -145,6 +136,10 @@ class Configuration(object):
 
         # account
         assert (self.account.__class__ is str), "Expected account to be string. Got {}".format(self.account.__class__)
+
+        # firefox_profile
+        if self.firefox_profile is not None:
+            assert (self.firefox_profile.__class__ is str), "Expected firefox_profile to be None or a string. Got {}.".format(self.firefox_profile.__class__)
 
     # Write the configuration (and credentials) out to disk. This allows for
     # regular AWS tooling (aws cli and boto) to use the credentials in the
@@ -173,6 +168,8 @@ class Configuration(object):
             config_parser.set(profile, 'google_config.u2f_disabled', self.u2f_disabled)
             config_parser.set(profile, 'google_config.google_username', self.username)
             config_parser.set(profile, 'google_config.bg_response', self.bg_response)
+            if self.firefox_profile is not None:
+                config_parser.set(profile, 'google_config.firefox_profile', self.firefox_profile)
 
             with open(self.config_file, 'w+') as f:
                 config_parser.write(f)
@@ -266,6 +263,10 @@ class Configuration(object):
             # bg_response
             read_bg_response = unicode_to_string(config_parser[profile_string].get('google_config.bg_response', None))
             self.bg_response = coalesce(read_bg_response, self.bg_response)
+
+            # Firefox Profile
+            read_firefox_profile = unicode_to_string(config_parser[profile_string].get('google_config.firefox_profile', None))
+            self.firefox_profile = coalesce(read_firefox_profile, self.firefox_profile)
 
             # Account
             read_account = unicode_to_string(config_parser[profile_string].get('account', None))
