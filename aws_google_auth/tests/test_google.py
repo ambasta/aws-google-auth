@@ -8,7 +8,7 @@ import base64
 
 from bs4 import BeautifulSoup
 
-from mock import Mock
+from unittest.mock import Mock
 from aws_google_auth import google
 
 
@@ -80,6 +80,78 @@ class TestGoogle(unittest.TestCase):
         self.assertEqual("Something went wrong - Could not find SAML response, check your credentials "
                          "or use --save-failure-html to debug.",
                          str(ex.exception))
+
+    def test_do_login_with_unexpected_google_page_raises_expected_exception(self):
+        mock_config = Mock()
+        mock_config.idp_id = "bad-idp"
+        mock_config.sp_id = "bad-sp"
+        mock_config.username = "user@example.com"
+        mock_config.bg_response = None
+
+        undertest = google.Google(config=mock_config, save_failure=False)
+        undertest.get = Mock()
+        undertest.get.return_value = Mock(
+            text="<html><head><title>Bad Request</title></head><body></body></html>"
+        )
+
+        with self.assertRaises(google.ExpectedGoogleException) as ex:
+            undertest.do_login()
+
+        self.assertIn("Google did not return the expected SAML login form", str(ex.exception))
+        self.assertIn("Check GOOGLE_IDP_ID and GOOGLE_SP_ID", str(ex.exception))
+
+    def test_do_login_with_modern_google_page_mentions_bg_response(self):
+        mock_config = Mock()
+        mock_config.idp_id = "idp"
+        mock_config.sp_id = "sp"
+        mock_config.username = "user@example.com"
+        mock_config.bg_response = None
+
+        undertest = google.Google(config=mock_config, save_failure=False)
+        undertest.get = Mock()
+        undertest.get.return_value = Mock(
+            text=(
+                "<html><head><title>Sign in - Google Accounts</title></head>"
+                "<body><form><input id='identifierId' name='identifier'></form></body></html>"
+            )
+        )
+
+        with self.assertRaises(google.ExpectedGoogleException) as ex:
+            undertest.do_login()
+
+        self.assertIn("modern JavaScript sign-in page", str(ex.exception))
+        self.assertIn("--bg-response", str(ex.exception))
+
+    def test_do_login_with_unexpected_password_challenge_page_raises_expected_exception(self):
+        mock_config = Mock()
+        mock_config.idp_id = "idp"
+        mock_config.sp_id = "sp"
+        mock_config.username = "user@example.com"
+        mock_config.bg_response = None
+
+        undertest = google.Google(config=mock_config, save_failure=False)
+        undertest.get = Mock()
+        undertest.get.return_value = Mock(
+            text=(
+                "<html><body>"
+                "<input name='continue' value='next'>"
+                "<form id='gaia_loginform' action='https://accounts.google.com/login'>"
+                "<input name='Email' value=''>"
+                "</form>"
+                "</body></html>"
+            )
+        )
+        undertest.post = Mock()
+        undertest.post.return_value = Mock(
+            text="<html><head><title>Challenge Error</title></head><body></body></html>",
+            url="https://accounts.google.com/login",
+        )
+
+        with self.assertRaises(google.ExpectedGoogleException) as ex:
+            undertest.do_login()
+
+        self.assertIn("during password challenge", str(ex.exception))
+        self.assertIn("Challenge Error", str(ex.exception))
 
     def test_parse_saml_with_save(self):
         mock_config = Mock()

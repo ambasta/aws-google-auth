@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 
-import sys
 import unittest
 
-from mock import patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 from aws_google_auth import util
 
@@ -31,24 +30,25 @@ class TestUtilMethods(unittest.TestCase):
         self.assertEqual(util.Util.coalesce(None, None, None, None, None, None, None, None, None, None, "test-01"), "test-01")
 
     def test_unicode_to_string_if_needed_python_3(self):
-        if sys.version_info >= (3, 0):
-            value_string = "Test String!"
-            self.assertIn("str", str(value_string.__class__))
-            self.assertEqual(util.Util.unicode_to_string_if_needed(value_string), value_string)
-
-    def test_unicode_to_string_if_needed_python_2(self):
-        if sys.version_info < (3, 0):
-            value_string = "Test String!"
-            value_unicode = value_string.decode('utf-8')
-            self.assertIn("str", str(value_string.__class__))
-            self.assertIn("unicode", str(value_unicode.__class__))
-            self.assertEqual(util.Util.unicode_to_string_if_needed(value_unicode), value_string)
-            self.assertEqual(util.Util.unicode_to_string_if_needed(value_string), value_string)
+        value_string = "Test String!"
+        self.assertIn("str", str(value_string.__class__))
+        self.assertEqual(util.Util.unicode_to_string_if_needed(value_string), value_string)
 
     def test_unicode_to_string_if_needed(self):
         self.assertEqual(util.Util.unicode_to_string_if_needed(None), None)
         self.assertEqual(util.Util.unicode_to_string_if_needed(1234), 1234)
         self.assertEqual(util.Util.unicode_to_string_if_needed("nop"), "nop")
+
+    @patch('builtins.input', spec=True)
+    def test_get_input_strips_whitespace(self, mock_input):
+        mock_input.return_value = " C03023tpd "
+
+        self.assertEqual(util.Util.get_input("Google IDP ID: "), "C03023tpd")
+
+    def test_strip_if_string(self):
+        self.assertEqual(util.Util.strip_if_string(" ap-south-1 "), "ap-south-1")
+        self.assertEqual(util.Util.strip_if_string(None), None)
+        self.assertEqual(util.Util.strip_if_string(1234), 1234)
 
     @patch('getpass.getpass', spec=True)
     @patch('sys.stdin', spec=True)

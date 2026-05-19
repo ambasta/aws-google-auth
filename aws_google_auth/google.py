@@ -1,6 +1,4 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from __future__ import print_function
 
 import base64
 import io
@@ -8,16 +6,15 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 
 import requests
 from PIL import Image
 from datetime import datetime
-from distutils.spawn import find_executable
 from bs4 import BeautifulSoup
 from requests import HTTPError
-from six import print_ as print
-from six.moves import urllib_parse, input
+from urllib import parse as urllib_parse
 
 from aws_google_auth import _version
 
@@ -118,6 +115,31 @@ class Google:
             with open(os.path.join(self.save_flow_dir, filename), 'w', encoding='utf-8') as out:
                 out.write(response.text)
 
+    def _raise_unexpected_login_page(self, sess, parsed_page, context):
+        if self.save_failure:
+            logging.error("Google %s page lookup failed, storing failure page to 'failure.html'.", context)
+            with open("failure.html", 'w', encoding='utf-8') as out:
+                out.write(sess.text)
+
+        error_msg = self.parse_error_message(sess)
+        if error_msg is None:
+            title = parsed_page.find('title')
+            error_msg = title.get_text(strip=True) if title else 'unexpected Google login page'
+
+        if parsed_page.find(id='identifierId'):
+            raise ExpectedGoogleException(
+                "Google returned the modern JavaScript sign-in page during {} ({}). "
+                "This CLI expects Google's legacy HTML SAML form. Open this URL in a browser: {} "
+                "then run document.bg.invoke() in the browser console and pass the result with "
+                "--bg-response.".format(context, error_msg, self.login_url)
+            )
+
+        raise ExpectedGoogleException(
+            "Google did not return the expected SAML login form during {} ({}). "
+            "Check GOOGLE_IDP_ID and GOOGLE_SP_ID; remove any extra spaces. "
+            "Use --save-failure-html to save the response for debugging.".format(context, error_msg)
+        )
+
     def post(self, url, data=None, json_data=None):
         try:
             self._save_request(url, method='POST', data=data, json_data=json_data)
@@ -211,11 +233,15 @@ class Google:
 
         # Collect information from the page source
         first_page = BeautifulSoup(sess.text, 'html.parser')
+        continue_input = first_page.find('input', {'name': 'continue'})
+        form = first_page.find('form', {'id': 'gaia_loginform'})
+        if continue_input is None or form is None:
+            self._raise_unexpected_login_page(sess, first_page, 'initial login')
+
         # gxf = first_page.find('input', {'name': 'gxf'}).get('value')
-        self.cont = first_page.find('input', {'name': 'continue'}).get('value')
+        self.cont = continue_input.get('value')
         # page = first_page.find('input', {'name': 'Page'}).get('value')
         # sign_in = first_page.find('input', {'name': 'signIn'}).get('value')
-        form = first_page.find('form', {'id': 'gaia_loginform'})
         account_login_url = form.get('action')
 
         payload = {}
@@ -253,6 +279,8 @@ class Google:
             # sometimes they serve up a different page
             logging.info("Handling new-style login page")
             form = challenge_page.find('form', {'id': 'challenge'})
+            if form is None:
+                self._raise_unexpected_login_page(sess, challenge_page, 'password challenge')
             passwd_challenge_url = 'https://accounts.google.com' + form.get('action')
 
         for tag in form.find_all('input'):
@@ -344,7 +372,7 @@ class Google:
 
     @staticmethod
     def check_extra_step(response):
-        extra_step = response.find(text='This extra step shows that it’s really you trying to sign in')
+        extra_step = response.find(string='This extra step shows that it’s really you trying to sign in')
         if extra_step:
             if response.find(id='contactAdminMessage'):
                 raise ValueError(response.find(id='contactAdminMessage').text)
@@ -401,7 +429,7 @@ class Google:
         # Check if there is a display utility installed as Image.open(f).show() do not raise any exception if not
         # if neither xv or display are available just display the URL for the user to visit.
         if os.name == 'posix' and sys.platform != 'darwin':
-            if find_executable('xv') is None and find_executable('display') is None:
+            if shutil.which('xv') is None and shutil.which('display') is None:
                 open_image = False
 
         print("Please visit the following URL to view your CAPTCHA: {}".format(captcha_url))
@@ -414,10 +442,7 @@ class Google:
             except Exception:
                 pass
 
-        try:
-            captcha_input = raw_input("Captcha (case insensitive): ") or None
-        except NameError:
-            captcha_input = input("Captcha (case insensitive): ") or None
+        captcha_input = input("Captcha (case insensitive): ") or None
 
         # Update the payload
         payload['identifier-captcha-input'] = captcha_input
