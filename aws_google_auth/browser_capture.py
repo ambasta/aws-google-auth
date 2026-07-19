@@ -366,12 +366,11 @@ def click_google_account_if_present(driver, google_username):
 
 def is_google_account_chooser_url(url):
     parsed_url = urllib_parse.urlsplit(url)
-    return (
-        parsed_url.scheme == "https"
-        and parsed_url.hostname == "accounts.google.com"
-        and (
-            GOOGLE_ACCOUNT_CHOOSER_PATH_PATTERN.fullmatch(parsed_url.path)
-            is not None
+    return all(
+        (
+            parsed_url.scheme == "https",
+            parsed_url.hostname == "accounts.google.com",
+            GOOGLE_ACCOUNT_CHOOSER_PATH_PATTERN.fullmatch(parsed_url.path) is not None,
         )
     )
 
@@ -395,14 +394,13 @@ def clone_firefox_profile(source_path, target_path, progress=None):
             continue
 
         name = source_item.name
-        if (
-            name in FIREFOX_PROFILE_CLONE_FILES
-            or any(
-                name == "{}{}".format(file_name, suffix)
-                for file_name in FIREFOX_PROFILE_CLONE_FILES
-                for suffix in FIREFOX_PROFILE_SQLITE_SUFFIXES
-            )
-        ):
+        is_profile_file = name in FIREFOX_PROFILE_CLONE_FILES
+        is_sqlite_companion = any(
+            name == "{}{}".format(file_name, suffix)
+            for file_name in FIREFOX_PROFILE_CLONE_FILES
+            for suffix in FIREFOX_PROFILE_SQLITE_SUFFIXES
+        )
+        if is_profile_file or is_sqlite_companion:
             shutil.copy2(source_item, target / name)
             copied_items += 1
             report("Copied Firefox profile item {}: {}".format(copied_items, name))
@@ -451,11 +449,7 @@ def copy_firefox_site_storage(source, target, progress=None):
 
 def should_copy_firefox_storage_origin(origin_name):
     normalized = origin_name.lower()
-    return (
-        "google" in normalized
-        or "amazon" in normalized
-        or "aws" in normalized
-    )
+    return any(provider in normalized for provider in ("google", "amazon", "aws"))
 
 
 def find_free_port():
@@ -696,11 +690,14 @@ def capture_saml_response_with_firefox(
                     last_url = current_url
                     next_status_at = now + 10
 
-                if (
-                    google_username
-                    and now >= next_google_account_click_at
-                    and is_google_account_chooser_url(current_url)
-                ):
+                should_click_google_account = all(
+                    (
+                        google_username,
+                        now >= next_google_account_click_at,
+                        is_google_account_chooser_url(current_url),
+                    )
+                )
+                if should_click_google_account:
                     clicked_google_account = click_google_account_if_present(
                         driver,
                         google_username,
