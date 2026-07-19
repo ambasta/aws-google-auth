@@ -36,6 +36,7 @@ jobs:
     - name: Test with pytest
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         uv run coverage run --source=aws_google_auth/ --omit=aws_google_auth/tests/* -m pytest
         uv run coverage report
