@@ -3,9 +3,9 @@ name: Lint RST
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 jobs:
   build:
@@ -27,4 +27,3 @@ jobs:
     - name: Lint with rst
       run: |
         uv run rst-lint README.rst
-
