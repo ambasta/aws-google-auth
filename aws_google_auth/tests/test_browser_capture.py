@@ -263,6 +263,81 @@ class TestBrowserCapture(unittest.TestCase):
         )
         self.assertEqual(5, current_url.call_count)
 
+    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
+    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    def test_capture_reloads_a_stalled_account_chooser(
+        self,
+        mock_build_extension,
+        mock_webdriver,
+    ):
+        login_url = "https://accounts.google.com/o/saml2/initsso"
+        chooser_url = (
+            "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
+        )
+        driver = Mock()
+        current_url = PropertyMock(side_effect=[
+            chooser_url,
+            "moz-extension://capture/captured.html",
+        ])
+        type(driver).current_url = current_url
+        driver.find_element.side_effect = ["saml-element-id", "labels-element-id"]
+        driver.get_element_property.side_effect = ["YWJjZA==", "[]"]
+        mock_webdriver.return_value = driver
+
+        with (
+            patch(
+                'aws_google_auth.browser_capture.GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS',
+                0,
+            ),
+            patch(
+                'aws_google_auth.browser_capture.time.monotonic',
+                return_value=0,
+            ),
+            patch('aws_google_auth.browser_capture.time.sleep', spec=True),
+            patch(
+                'aws_google_auth.browser_capture.click_google_account_if_present',
+                return_value=True,
+            ),
+        ):
+            result = browser_capture.capture_saml_response_with_firefox(
+                login_url,
+                timeout_seconds=120,
+                google_username="user@example.com",
+            )
+
+        self.assertEqual("YWJjZA==", result.saml_response)
+        self.assertEqual(
+            [call(login_url), call(login_url)],
+            driver.get.mock_calls,
+        )
+
+    def test_firefox_profile_storage_copy_is_limited_to_auth_origins(self):
+        self.assertTrue(
+            browser_capture.should_copy_firefox_storage_origin(
+                "https+++accounts.google.com",
+            )
+        )
+        self.assertTrue(
+            browser_capture.should_copy_firefox_storage_origin(
+                "https+++accounts.google.com^partitionKey=%28https%2Cexample.com%29",
+            )
+        )
+        self.assertTrue(
+            browser_capture.should_copy_firefox_storage_origin(
+                "https+++ap-south-1.signin.aws.amazon.com",
+            )
+        )
+        self.assertFalse(
+            browser_capture.should_copy_firefox_storage_origin(
+                "https+++www.google.com^partitionKey=%28https%2Cexample.com%29",
+            )
+        )
+        self.assertFalse(
+            browser_capture.should_copy_firefox_storage_origin(
+                "https+++ap-south-1.console.aws.amazon.com",
+            )
+        )
+
     def test_firefox_capture_extension_includes_aws_role_scraper(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             extension_path = Path(temp_dir) / "capture.xpi"

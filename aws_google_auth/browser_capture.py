@@ -19,8 +19,15 @@ WEBDRIVER_STATUS_TIMEOUT_SECONDS = 0.2
 WEBDRIVER_COMMAND_TIMEOUT_SECONDS = 10
 WEBDRIVER_QUIT_TIMEOUT_SECONDS = 1
 GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS = 2
+GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS = 15
+GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT = 2
 GOOGLE_ACCOUNT_CHOOSER_PATH_PATTERN = re.compile(
     r"^/(?:AccountChooser|v\d+/signin/accountchooser)/?$",
+    re.IGNORECASE,
+)
+FIREFOX_AUTH_STORAGE_ORIGIN_PATTERN = re.compile(
+    r"^https\+\+\+(?:accounts\.google\.com|"
+    r"(?:[a-z0-9-]+\.)?signin\.aws(?:\.amazon\.com)?)(?:\^|$)",
     re.IGNORECASE,
 )
 
@@ -450,8 +457,7 @@ def copy_firefox_site_storage(source, target, progress=None):
 
 
 def should_copy_firefox_storage_origin(origin_name):
-    normalized = origin_name.lower()
-    return any(provider in normalized for provider in ("google", "amazon", "aws"))
+    return FIREFOX_AUTH_STORAGE_ORIGIN_PATTERN.match(origin_name) is not None
 
 
 def find_free_port():
@@ -718,6 +724,9 @@ def capture_saml_response_with_firefox(
             next_status_at = 0
             last_url = None
             next_google_account_click_at = 0
+            google_account_chooser_since = None
+            google_account_click_requested = False
+            google_account_chooser_reloads = 0
             while time.monotonic() < deadline:
                 current_url = driver.current_url
                 now = time.monotonic()
@@ -730,11 +739,21 @@ def capture_saml_response_with_firefox(
                     last_url = current_url
                     next_status_at = now + 10
 
+                is_google_account_chooser = is_google_account_chooser_url(
+                    current_url,
+                )
+                if is_google_account_chooser:
+                    if google_account_chooser_since is None:
+                        google_account_chooser_since = now
+                else:
+                    google_account_chooser_since = None
+                    google_account_click_requested = False
+
                 should_click_google_account = all(
                     (
                         google_username,
                         now >= next_google_account_click_at,
-                        is_google_account_chooser_url(current_url),
+                        is_google_account_chooser,
                     )
                 )
                 if should_click_google_account:
@@ -746,12 +765,45 @@ def capture_saml_response_with_firefox(
                         now + GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS
                     )
                     if clicked_google_account:
+                        google_account_click_requested = True
                         print(
                             "Requested Google account selection: {}".format(
                                 google_username,
                             ),
                             flush=True,
                         )
+
+                chooser_wait_seconds = 0
+                if google_account_chooser_since is not None:
+                    chooser_wait_seconds = now - google_account_chooser_since
+                chooser_is_stalled = all((
+                    google_account_click_requested,
+                    chooser_wait_seconds >= GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS,
+                ))
+                if chooser_is_stalled:
+                    reload_limit = GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT
+                    if google_account_chooser_reloads >= reload_limit:
+                        raise WebDriverError(
+                            "Google account chooser did not advance after "
+                            "selecting {}. Close the capture window and retry."
+                            .format(google_username)
+                        )
+
+                    google_account_chooser_reloads += 1
+                    print(
+                        "Google account chooser did not advance; reloading "
+                        "the SSO page (attempt {}/{}).".format(
+                            google_account_chooser_reloads,
+                            GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT,
+                        ),
+                        flush=True,
+                    )
+                    driver.get(login_url)
+                    google_account_chooser_since = now
+                    google_account_click_requested = False
+                    next_google_account_click_at = 0
+                    time.sleep(0.25)
+                    continue
 
                 if current_url.startswith("moz-extension://"):
                     try:
