@@ -16,6 +16,8 @@ import requests
 ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
 DEFAULT_BROWSER_TIMEOUT_SECONDS = 600
 WEBDRIVER_STATUS_TIMEOUT_SECONDS = 0.2
+WEBDRIVER_COMMAND_TIMEOUT_SECONDS = 10
+WEBDRIVER_QUIT_TIMEOUT_SECONDS = 1
 GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS = 2
 GOOGLE_ACCOUNT_CHOOSER_PATH_PATTERN = re.compile(
     r"^/(?:AccountChooser|v\d+/signin/accountchooser)/?$",
@@ -487,20 +489,26 @@ class FirefoxWebDriver:
         self.base_url = "http://127.0.0.1:{}".format(self.port)
         self.process = None
         self.session_id = None
+        self.request_deadline = None
+        self.request_failed = False
+        self.log_file = None
 
     def start(self):
+        self.log_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
         self.process = subprocess.Popen(
             [self.geckodriver_executable, "--port", str(self.port), "--host", "127.0.0.1"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=self.log_file,
+            stderr=subprocess.STDOUT,
             text=True,
         )
 
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
-                _, stderr = self.process.communicate()
-                raise WebDriverError(stderr.strip() or "geckodriver exited before startup")
+                self.log_file.flush()
+                self.log_file.seek(0)
+                output = self.log_file.read()
+                raise WebDriverError(output.strip() or "geckodriver exited before startup")
 
             try:
                 response = requests.get(
@@ -516,13 +524,32 @@ class FirefoxWebDriver:
 
         raise WebDriverError("Timed out waiting for geckodriver to start")
 
-    def request(self, method, path, body=None):
-        response = requests.request(
-            method,
-            self.base_url + path,
-            json=body,
-            timeout=self.request_timeout_seconds,
+    def request(self, method, path, body=None, timeout_seconds=None):
+        if timeout_seconds is None:
+            timeout_seconds = self.request_timeout_seconds
+        request_timeout_seconds = min(
+            self.request_timeout_seconds,
+            timeout_seconds,
         )
+        if self.request_deadline is not None:
+            remaining_seconds = self.request_deadline - time.monotonic()
+            if remaining_seconds <= 0:
+                raise TimeoutError("Browser SAML capture deadline elapsed")
+            request_timeout_seconds = min(
+                request_timeout_seconds,
+                remaining_seconds,
+            )
+
+        try:
+            response = requests.request(
+                method,
+                self.base_url + path,
+                json=body,
+                timeout=request_timeout_seconds,
+            )
+        except requests.RequestException:
+            self.request_failed = True
+            raise
         return unwrap_webdriver_response(response)
 
     def create_session(self, firefox_executable=None, profile_path=None):
@@ -611,12 +638,17 @@ class FirefoxWebDriver:
         return self.request("GET", "/session/{}/title".format(self.session_id))
 
     def quit(self):
-        if self.session_id:
+        self.request_deadline = None
+        if self.session_id and not self.request_failed:
             try:
-                self.request("DELETE", "/session/{}".format(self.session_id))
+                self.request(
+                    "DELETE",
+                    "/session/{}".format(self.session_id),
+                    timeout_seconds=WEBDRIVER_QUIT_TIMEOUT_SECONDS,
+                )
             except (requests.RequestException, WebDriverError):
                 pass
-            self.session_id = None
+        self.session_id = None
 
         if self.process:
             try:
@@ -625,6 +657,10 @@ class FirefoxWebDriver:
             except subprocess.TimeoutExpired:
                 self.process.kill()
             self.process = None
+
+        if self.log_file:
+            self.log_file.close()
+            self.log_file = None
 
 
 def capture_saml_response_with_firefox(
@@ -637,7 +673,10 @@ def capture_saml_response_with_firefox(
 ):
     driver = FirefoxWebDriver(
         geckodriver_executable=geckodriver_executable,
-        request_timeout_seconds=timeout_seconds,
+        request_timeout_seconds=min(
+            timeout_seconds,
+            WEBDRIVER_COMMAND_TIMEOUT_SECONDS,
+        ),
     )
 
     try:
@@ -671,10 +710,11 @@ def capture_saml_response_with_firefox(
             driver.set_window_rect()
             driver.install_addon(extension_path)
             print("SAML capture extension installed.", flush=True)
+            deadline = time.monotonic() + timeout_seconds
+            driver.request_deadline = deadline
             driver.get(login_url)
             print("Google SSO page loaded in Firefox.", flush=True)
 
-            deadline = time.monotonic() + timeout_seconds
             next_status_at = 0
             last_url = None
             next_google_account_click_at = 0

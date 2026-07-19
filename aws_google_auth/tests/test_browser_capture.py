@@ -1,3 +1,4 @@
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -80,6 +81,49 @@ class TestBrowserCapture(unittest.TestCase):
             mock_request.mock_calls,
         )
 
+    @patch('aws_google_auth.browser_capture.requests.request', spec=True)
+    def test_firefox_webdriver_limits_command_to_capture_deadline(
+        self,
+        mock_request,
+    ):
+        response = Mock(status_code=200)
+        response.json.return_value = {"value": None}
+        mock_request.return_value = response
+        driver = browser_capture.FirefoxWebDriver(request_timeout_seconds=120)
+        driver.request_deadline = 100
+
+        with patch(
+            'aws_google_auth.browser_capture.time.monotonic',
+            return_value=95,
+        ):
+            driver.get("https://accounts.google.com/")
+
+        mock_request.assert_called_once_with(
+            "POST",
+            driver.base_url + "/session/None/url",
+            json={"url": "https://accounts.google.com/"},
+            timeout=5,
+        )
+
+    @patch('aws_google_auth.browser_capture.requests.request', spec=True)
+    def test_firefox_webdriver_rejects_command_after_capture_deadline(
+        self,
+        mock_request,
+    ):
+        driver = browser_capture.FirefoxWebDriver(request_timeout_seconds=120)
+        driver.request_deadline = 100
+
+        with (
+            patch(
+                'aws_google_auth.browser_capture.time.monotonic',
+                return_value=101,
+            ),
+            self.assertRaisesRegex(TimeoutError, "capture deadline elapsed"),
+        ):
+            driver.get("https://accounts.google.com/")
+
+        mock_request.assert_not_called()
+
     @patch('aws_google_auth.browser_capture.subprocess.Popen', spec=True)
     @patch('aws_google_auth.browser_capture.requests.get', spec=True)
     def test_firefox_webdriver_keeps_status_poll_timeout_short(
@@ -97,6 +141,21 @@ class TestBrowserCapture(unittest.TestCase):
             driver.base_url + "/status",
             timeout=browser_capture.WEBDRIVER_STATUS_TIMEOUT_SECONDS,
         )
+        popen_kwargs = mock_popen.call_args.kwargs
+        self.assertIsNot(subprocess.PIPE, popen_kwargs["stdout"])
+        self.assertEqual(subprocess.STDOUT, popen_kwargs["stderr"])
+        driver.quit()
+
+    def test_firefox_webdriver_skips_session_delete_after_failed_request(self):
+        driver = browser_capture.FirefoxWebDriver()
+        driver.session_id = "session-id"
+        driver.request_failed = True
+        driver.request = Mock()
+        driver.process = Mock()
+
+        driver.quit()
+
+        driver.request.assert_not_called()
 
     def test_extract_saml_response_from_post_data(self):
         self.assertEqual(
@@ -283,7 +342,7 @@ class TestBrowserCapture(unittest.TestCase):
         self.assertEqual({"111111111111": "example-prod"}, result.account_aliases)
         mock_webdriver.assert_called_once_with(
             geckodriver_executable="/usr/bin/geckodriver",
-            request_timeout_seconds=120,
+            request_timeout_seconds=browser_capture.WEBDRIVER_COMMAND_TIMEOUT_SECONDS,
         )
         session_kwargs = driver.create_session.call_args.kwargs
         self.assertEqual("/usr/bin/firefox", session_kwargs["firefox_executable"])
