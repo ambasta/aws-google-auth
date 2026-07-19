@@ -14,6 +14,13 @@ import requests
 
 
 ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
+DEFAULT_BROWSER_TIMEOUT_SECONDS = 600
+WEBDRIVER_STATUS_TIMEOUT_SECONDS = 0.2
+GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS = 2
+GOOGLE_ACCOUNT_CHOOSER_PATH_PATTERN = re.compile(
+    r"^/(?:AccountChooser|v\d+/signin/accountchooser)/?$",
+    re.IGNORECASE,
+)
 
 
 class WebDriverError(RuntimeError):
@@ -357,6 +364,18 @@ def click_google_account_if_present(driver, google_username):
     return False
 
 
+def is_google_account_chooser_url(url):
+    parsed_url = urllib_parse.urlsplit(url)
+    return (
+        parsed_url.scheme == "https"
+        and parsed_url.hostname == "accounts.google.com"
+        and (
+            GOOGLE_ACCOUNT_CHOOSER_PATH_PATTERN.fullmatch(parsed_url.path)
+            is not None
+        )
+    )
+
+
 def clone_firefox_profile(source_path, target_path, progress=None):
     source = Path(source_path).expanduser()
     target = Path(target_path)
@@ -463,8 +482,13 @@ def unwrap_webdriver_response(response):
 
 
 class FirefoxWebDriver:
-    def __init__(self, geckodriver_executable="geckodriver"):
+    def __init__(
+        self,
+        geckodriver_executable="geckodriver",
+        request_timeout_seconds=DEFAULT_BROWSER_TIMEOUT_SECONDS,
+    ):
         self.geckodriver_executable = geckodriver_executable
+        self.request_timeout_seconds = request_timeout_seconds
         self.port = find_free_port()
         self.base_url = "http://127.0.0.1:{}".format(self.port)
         self.process = None
@@ -485,7 +509,10 @@ class FirefoxWebDriver:
                 raise WebDriverError(stderr.strip() or "geckodriver exited before startup")
 
             try:
-                response = requests.get(self.base_url + "/status", timeout=0.2)
+                response = requests.get(
+                    self.base_url + "/status",
+                    timeout=WEBDRIVER_STATUS_TIMEOUT_SECONDS,
+                )
                 if response.ok:
                     return
             except requests.RequestException:
@@ -496,7 +523,12 @@ class FirefoxWebDriver:
         raise WebDriverError("Timed out waiting for geckodriver to start")
 
     def request(self, method, path, body=None):
-        response = requests.request(method, self.base_url + path, json=body, timeout=30)
+        response = requests.request(
+            method,
+            self.base_url + path,
+            json=body,
+            timeout=self.request_timeout_seconds,
+        )
         return unwrap_webdriver_response(response)
 
     def create_session(self, firefox_executable=None, profile_path=None):
@@ -520,6 +552,7 @@ class FirefoxWebDriver:
             "capabilities": {
                 "alwaysMatch": {
                     "browserName": "firefox",
+                    "pageLoadStrategy": "none",
                     "moz:firefoxOptions": firefox_options,
                 },
             },
@@ -602,13 +635,16 @@ class FirefoxWebDriver:
 
 def capture_saml_response_with_firefox(
     login_url,
-    timeout_seconds=600,
+    timeout_seconds=DEFAULT_BROWSER_TIMEOUT_SECONDS,
     executable_path=None,
     profile_path=None,
     geckodriver_executable="geckodriver",
     google_username=None,
 ):
-    driver = FirefoxWebDriver(geckodriver_executable=geckodriver_executable)
+    driver = FirefoxWebDriver(
+        geckodriver_executable=geckodriver_executable,
+        request_timeout_seconds=timeout_seconds,
+    )
 
     try:
         with tempfile.TemporaryDirectory(prefix='aws-google-auth-firefox-') as temp_dir:
@@ -647,7 +683,7 @@ def capture_saml_response_with_firefox(
             deadline = time.monotonic() + timeout_seconds
             next_status_at = 0
             last_url = None
-            clicked_google_account = False
+            next_google_account_click_at = 0
             while time.monotonic() < deadline:
                 current_url = driver.current_url
                 now = time.monotonic()
@@ -662,16 +698,21 @@ def capture_saml_response_with_firefox(
 
                 if (
                     google_username
-                    and not clicked_google_account
-                    and "accounts.google.com" in current_url
+                    and now >= next_google_account_click_at
+                    and is_google_account_chooser_url(current_url)
                 ):
                     clicked_google_account = click_google_account_if_present(
                         driver,
                         google_username,
                     )
+                    next_google_account_click_at = (
+                        now + GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS
+                    )
                     if clicked_google_account:
                         print(
-                            "Selected Google account: {}".format(google_username),
+                            "Requested Google account selection: {}".format(
+                                google_username,
+                            ),
                             flush=True,
                         )
 

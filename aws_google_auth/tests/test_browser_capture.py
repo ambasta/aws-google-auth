@@ -2,12 +2,101 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from unittest.mock import Mock, call, patch
+from unittest.mock import ANY, Mock, PropertyMock, call, patch
 
 from aws_google_auth import browser_capture
 
 
 class TestBrowserCapture(unittest.TestCase):
+
+    def test_firefox_webdriver_defaults_to_browser_capture_timeout(self):
+        driver = browser_capture.FirefoxWebDriver()
+
+        self.assertEqual(
+            browser_capture.DEFAULT_BROWSER_TIMEOUT_SECONDS,
+            driver.request_timeout_seconds,
+        )
+
+    def test_firefox_webdriver_uses_non_blocking_page_load_strategy(self):
+        driver = browser_capture.FirefoxWebDriver()
+        driver.request = Mock(return_value={"sessionId": "session-id"})
+
+        driver.create_session()
+
+        driver.request.assert_called_once_with(
+            "POST",
+            "/session",
+            {
+                "capabilities": {
+                    "alwaysMatch": {
+                        "browserName": "firefox",
+                        "pageLoadStrategy": "none",
+                        "moz:firefoxOptions": {
+                            "args": ["-new-instance", "-foreground"],
+                            "prefs": {
+                                "browser.shell.checkDefaultBrowser": False,
+                                "browser.startup.page": 0,
+                                "browser.sessionstore.resume_session_once": False,
+                                "browser.sessionstore.resume_from_crash": False,
+                            },
+                        },
+                    },
+                },
+            },
+        )
+
+    @patch('aws_google_auth.browser_capture.requests.request', spec=True)
+    def test_firefox_webdriver_uses_configured_timeout_for_commands(
+        self,
+        mock_request,
+    ):
+        session_response = Mock(status_code=200)
+        session_response.json.return_value = {
+            "value": {"sessionId": "session-id"},
+        }
+        navigation_response = Mock(status_code=200)
+        navigation_response.json.return_value = {"value": None}
+        mock_request.side_effect = [session_response, navigation_response]
+        driver = browser_capture.FirefoxWebDriver(request_timeout_seconds=120)
+
+        driver.create_session()
+        driver.get("https://accounts.google.com/")
+
+        self.assertEqual(
+            [
+                call(
+                    "POST",
+                    driver.base_url + "/session",
+                    json=ANY,
+                    timeout=120,
+                ),
+                call(
+                    "POST",
+                    driver.base_url + "/session/session-id/url",
+                    json={"url": "https://accounts.google.com/"},
+                    timeout=120,
+                ),
+            ],
+            mock_request.mock_calls,
+        )
+
+    @patch('aws_google_auth.browser_capture.subprocess.Popen', spec=True)
+    @patch('aws_google_auth.browser_capture.requests.get', spec=True)
+    def test_firefox_webdriver_keeps_status_poll_timeout_short(
+        self,
+        mock_get,
+        mock_popen,
+    ):
+        mock_popen.return_value.poll.return_value = None
+        mock_get.return_value.ok = True
+        driver = browser_capture.FirefoxWebDriver(request_timeout_seconds=120)
+
+        driver.start()
+
+        mock_get.assert_called_once_with(
+            driver.base_url + "/status",
+            timeout=browser_capture.WEBDRIVER_STATUS_TIMEOUT_SECONDS,
+        )
 
     def test_extract_saml_response_from_post_data(self):
         self.assertEqual(
@@ -64,6 +153,57 @@ class TestBrowserCapture(unittest.TestCase):
         self.assertTrue(driver.find_element_by_xpath.called)
         driver.click_element.assert_called_once_with("account-element")
 
+    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
+    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    def test_capture_retries_account_click_only_while_on_account_chooser(
+        self,
+        mock_build_extension,
+        mock_webdriver,
+    ):
+        chooser_url = (
+            "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
+        )
+        driver = Mock()
+        current_url = PropertyMock(side_effect=[
+            chooser_url,
+            chooser_url,
+            chooser_url,
+            "https://accounts.google.com/v3/signin/challenge/pwd?continue=aws",
+            "moz-extension://capture/captured.html",
+        ])
+        type(driver).current_url = current_url
+        driver.find_element.side_effect = ["saml-element-id", "labels-element-id"]
+        driver.get_element_property.side_effect = ["YWJjZA==", "[]"]
+        mock_webdriver.return_value = driver
+
+        clock_values = [index * 0.5 for index in range(11)]
+        with (
+            patch(
+                'aws_google_auth.browser_capture.time.monotonic',
+                side_effect=clock_values,
+            ),
+            patch('aws_google_auth.browser_capture.time.sleep', spec=True),
+            patch(
+                'aws_google_auth.browser_capture.click_google_account_if_present',
+                return_value=True,
+            ) as mock_click_google_account,
+        ):
+            result = browser_capture.capture_saml_response_with_firefox(
+                "https://accounts.google.com/o/saml2/initsso",
+                timeout_seconds=120,
+                google_username="user@example.com",
+            )
+
+        self.assertEqual("YWJjZA==", result.saml_response)
+        self.assertEqual(
+            [
+                call(driver, "user@example.com"),
+                call(driver, "user@example.com"),
+            ],
+            mock_click_google_account.mock_calls,
+        )
+        self.assertEqual(5, current_url.call_count)
+
     def test_firefox_capture_extension_includes_aws_role_scraper(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             extension_path = Path(temp_dir) / "capture.xpi"
@@ -112,7 +252,11 @@ class TestBrowserCapture(unittest.TestCase):
 
     @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
     @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
-    def test_capture_saml_response_uses_firefox_profile(self, mock_build_extension, mock_webdriver):
+    def test_capture_saml_response_uses_firefox_profile_and_timeout(
+        self,
+        mock_build_extension,
+        mock_webdriver,
+    ):
         driver = Mock()
         driver.current_url = "moz-extension://capture/captured.html"
         driver.find_element.side_effect = ["saml-element-id", "labels-element-id"]
@@ -129,7 +273,7 @@ class TestBrowserCapture(unittest.TestCase):
 
             result = browser_capture.capture_saml_response_with_firefox(
                 "https://accounts.google.com/o/saml2/initsso?idpid=idp&spid=sp&forceauthn=false",
-                timeout_seconds=1,
+                timeout_seconds=120,
                 executable_path="/usr/bin/firefox",
                 profile_path=str(profile_path),
                 geckodriver_executable="/usr/bin/geckodriver",
@@ -137,7 +281,10 @@ class TestBrowserCapture(unittest.TestCase):
 
         self.assertEqual("YWJjZA==", result.saml_response)
         self.assertEqual({"111111111111": "example-prod"}, result.account_aliases)
-        mock_webdriver.assert_called_once_with(geckodriver_executable="/usr/bin/geckodriver")
+        mock_webdriver.assert_called_once_with(
+            geckodriver_executable="/usr/bin/geckodriver",
+            request_timeout_seconds=120,
+        )
         session_kwargs = driver.create_session.call_args.kwargs
         self.assertEqual("/usr/bin/firefox", session_kwargs["firefox_executable"])
         self.assertNotEqual(str(profile_path), session_kwargs["profile_path"])
