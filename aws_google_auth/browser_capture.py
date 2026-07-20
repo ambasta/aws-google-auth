@@ -1,6 +1,8 @@
 import json
+import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import tempfile
@@ -18,6 +20,9 @@ DEFAULT_BROWSER_TIMEOUT_SECONDS = 600
 WEBDRIVER_STATUS_TIMEOUT_SECONDS = 0.2
 WEBDRIVER_COMMAND_TIMEOUT_SECONDS = 10
 WEBDRIVER_QUIT_TIMEOUT_SECONDS = 1
+WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS = 5
+WEBDRIVER_PROCESS_GROUP_GRACE_SECONDS = 1
+WEBDRIVER_FORCE_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS = 2
 GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS = 15
 GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT = 2
@@ -498,15 +503,24 @@ class FirefoxWebDriver:
         self.request_deadline = None
         self.request_failed = False
         self.log_file = None
+        self.process_group_id = None
 
     def start(self):
         self.log_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+        popen_kwargs = {
+            "stdout": self.log_file,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+        }
+        if os.name == "posix":
+            popen_kwargs["start_new_session"] = True
         self.process = subprocess.Popen(
             [self.geckodriver_executable, "--port", str(self.port), "--host", "127.0.0.1"],
-            stdout=self.log_file,
-            stderr=subprocess.STDOUT,
-            text=True,
+            **popen_kwargs,
         )
+        process_id = getattr(self.process, "pid", None)
+        if os.name == "posix" and isinstance(process_id, int) and process_id > 0:
+            self.process_group_id = process_id
 
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -643,6 +657,47 @@ class FirefoxWebDriver:
     def title(self):
         return self.request("GET", "/session/{}/title".format(self.session_id))
 
+    def signal_process(self, signal_number, force=False):
+        if self.process_group_id is not None and hasattr(os, "killpg"):
+            try:
+                os.killpg(self.process_group_id, signal_number)
+                return
+            except OSError:
+                pass
+
+        try:
+            if force:
+                self.process.kill()
+            else:
+                self.process.terminate()
+        except OSError:
+            pass
+
+    def stop_process(self):
+        if not self.process:
+            return
+
+        has_process_group = (
+            self.process_group_id is not None and hasattr(os, "killpg")
+        )
+        self.signal_process(signal.SIGTERM)
+        if has_process_group:
+            # Keep the group leader unreaped until every child has had a bounded
+            # chance to exit, then kill any survivor before the group ID can be
+            # reused by an unrelated process.
+            time.sleep(WEBDRIVER_PROCESS_GROUP_GRACE_SECONDS)
+            self.signal_process(WEBDRIVER_FORCE_KILL_SIGNAL, force=True)
+        try:
+            self.process.wait(timeout=WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            self.signal_process(WEBDRIVER_FORCE_KILL_SIGNAL, force=True)
+            try:
+                self.process.wait(timeout=WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                pass
+        self.process = None
+        self.process_group_id = None
+
     def quit(self):
         self.request_deadline = None
         if self.session_id and not self.request_failed:
@@ -656,13 +711,7 @@ class FirefoxWebDriver:
                 pass
         self.session_id = None
 
-        if self.process:
-            try:
-                self.process.terminate()
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-            self.process = None
+        self.stop_process()
 
         if self.log_file:
             self.log_file.close()

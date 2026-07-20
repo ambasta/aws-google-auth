@@ -1,3 +1,4 @@
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -144,6 +145,10 @@ class TestBrowserCapture(unittest.TestCase):
         popen_kwargs = mock_popen.call_args.kwargs
         self.assertIsNot(subprocess.PIPE, popen_kwargs["stdout"])
         self.assertEqual(subprocess.STDOUT, popen_kwargs["stderr"])
+        if browser_capture.os.name == "posix":
+            self.assertTrue(popen_kwargs["start_new_session"])
+        else:
+            self.assertNotIn("start_new_session", popen_kwargs)
         driver.quit()
 
     def test_firefox_webdriver_skips_session_delete_after_failed_request(self):
@@ -151,11 +156,65 @@ class TestBrowserCapture(unittest.TestCase):
         driver.session_id = "session-id"
         driver.request_failed = True
         driver.request = Mock()
-        driver.process = Mock()
+        process = Mock()
+        driver.process = process
 
         driver.quit()
 
         driver.request.assert_not_called()
+        process.terminate.assert_called_once_with()
+        process.wait.assert_called_once_with(
+            timeout=browser_capture.WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS,
+        )
+
+    @patch('aws_google_auth.browser_capture.time.sleep', spec=True)
+    @patch('aws_google_auth.browser_capture.os.killpg', spec=True)
+    def test_firefox_webdriver_finally_kills_group_after_parent_exits(
+        self,
+        mock_killpg,
+        mock_sleep,
+    ):
+        driver = browser_capture.FirefoxWebDriver()
+        process = Mock()
+        driver.process = process
+        driver.process_group_id = 4321
+
+        driver.quit()
+
+        self.assertEqual(
+            [
+                call(4321, signal.SIGTERM),
+                call(4321, browser_capture.WEBDRIVER_FORCE_KILL_SIGNAL),
+            ],
+            mock_killpg.mock_calls,
+        )
+        mock_sleep.assert_called_once_with(
+            browser_capture.WEBDRIVER_PROCESS_GROUP_GRACE_SECONDS,
+        )
+        process.wait.assert_called_once_with(
+            timeout=browser_capture.WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS,
+        )
+
+    def test_firefox_webdriver_kills_and_reaps_without_process_group(self):
+        driver = browser_capture.FirefoxWebDriver()
+        process = Mock()
+        driver.process = process
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired("geckodriver", 5),
+            0,
+        ]
+
+        driver.quit()
+
+        process.terminate.assert_called_once_with()
+        process.kill.assert_called_once_with()
+        self.assertEqual(
+            [
+                call(timeout=browser_capture.WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS),
+                call(timeout=browser_capture.WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS),
+            ],
+            process.wait.mock_calls,
+        )
 
     def test_extract_saml_response_from_post_data(self):
         self.assertEqual(
@@ -310,6 +369,53 @@ class TestBrowserCapture(unittest.TestCase):
             [call(login_url), call(login_url)],
             driver.get.mock_calls,
         )
+
+    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
+    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    def test_capture_stops_after_stalled_account_chooser_retry_limit(
+        self,
+        mock_build_extension,
+        mock_webdriver,
+    ):
+        login_url = "https://accounts.google.com/o/saml2/initsso"
+        chooser_url = (
+            "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
+        )
+        driver = Mock()
+        type(driver).current_url = PropertyMock(side_effect=[
+            chooser_url,
+            chooser_url,
+            chooser_url,
+        ])
+        mock_webdriver.return_value = driver
+
+        with (
+            patch(
+                'aws_google_auth.browser_capture.GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS',
+                0,
+            ),
+            patch(
+                'aws_google_auth.browser_capture.time.monotonic',
+                return_value=0,
+            ),
+            patch('aws_google_auth.browser_capture.time.sleep', spec=True),
+            patch(
+                'aws_google_auth.browser_capture.click_google_account_if_present',
+                return_value=True,
+            ),
+            self.assertRaisesRegex(RuntimeError, "did not advance"),
+        ):
+            browser_capture.capture_saml_response_with_firefox(
+                login_url,
+                timeout_seconds=120,
+                google_username="user@example.com",
+            )
+
+        self.assertEqual(
+            [call(login_url), call(login_url), call(login_url)],
+            driver.get.mock_calls,
+        )
+        driver.quit.assert_called_once_with()
 
     def test_firefox_profile_storage_copy_is_limited_to_auth_origins(self):
         self.assertTrue(
