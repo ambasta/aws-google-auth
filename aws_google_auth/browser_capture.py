@@ -26,6 +26,7 @@ WEBDRIVER_FORCE_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS = 2
 GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS = 15
 GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT = 2
+BROWSER_CAPTURE_MINIMUM_FREE_BYTES = 256 * 1024 * 1024
 GOOGLE_ACCOUNT_CHOOSER_PATH_PATTERN = re.compile(
     r"^/(?:AccountChooser|v\d+/signin/accountchooser)/?$",
     re.IGNORECASE,
@@ -46,6 +47,44 @@ class BrowserCaptureResult:
     saml_response: str
     account_aliases: dict = field(default_factory=dict)
     aws_roles: list = field(default_factory=list)
+
+
+def select_browser_capture_temp_root():
+    configured_root = os.environ.get("AWS_GOOGLE_AUTH_TMPDIR")
+    default_root = tempfile.gettempdir()
+    home_cache_root = Path.home() / ".cache" / "aws-google-auth" / "tmp"
+    xdg_cache_root = Path(
+        os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
+    ) / "aws-google-auth" / "tmp"
+    candidates = [
+        configured_root,
+        default_root,
+        str(home_cache_root),
+        str(xdg_cache_root),
+    ]
+    checked = []
+
+    for candidate in candidates:
+        if not candidate or candidate in checked:
+            continue
+        checked.append(candidate)
+        path = Path(candidate).expanduser()
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            free_bytes = shutil.disk_usage(path).free
+        except OSError:
+            continue
+        if free_bytes >= BROWSER_CAPTURE_MINIMUM_FREE_BYTES:
+            return str(path)
+
+    raise RuntimeError(
+        "Browser SAML capture needs at least {} MiB of free temporary space. "
+        "Set AWS_GOOGLE_AUTH_TMPDIR to a writable filesystem. Checked: {}"
+        .format(
+            BROWSER_CAPTURE_MINIMUM_FREE_BYTES // (1024 * 1024),
+            ", ".join(checked),
+        )
+    )
 
 
 FIREFOX_PROFILE_CLONE_FILES = {
@@ -179,19 +218,25 @@ browser.webRequest.onBeforeRequest.addListener(
 );
 
 browser.runtime.onMessage.addListener((message, sender) => {
-  if (!message || message.type !== "awsRoles") {
+  if (!message || (message.type !== "awsRoles" && message.type !== "awsPageReady")) {
     return;
   }
 
   const tabId = sender.tab && sender.tab.id;
-  if (typeof tabId === "number" && tabId >= 0 && fallbackCaptureTabs[tabId]) {
-    clearTimeout(fallbackCaptureTabs[tabId]);
-    delete fallbackCaptureTabs[tabId];
-  }
+  browser.storage.local.get(["samlResponse"]).then((data) => {
+    if (!data.samlResponse) {
+      return;
+    }
 
-  browser.storage.local.set({
-    awsRoles: message.roles || []
-  }).then(() => openCapturedPage(tabId));
+    if (typeof tabId === "number" && tabId >= 0 && fallbackCaptureTabs[tabId]) {
+      clearTimeout(fallbackCaptureTabs[tabId]);
+      delete fallbackCaptureTabs[tabId];
+    }
+
+    return browser.storage.local.set({
+      awsRoles: message.roles || []
+    }).then(() => openCapturedPage(tabId));
+  });
 });
 """
 
@@ -246,16 +291,11 @@ function parseAwsRolePageText(text) {
 
 function scrapeAndSendRoles() {
   const text = document.body ? document.body.innerText : "";
-  if (!text.includes("Select a role:") || !text.includes("Account:")) {
-    return false;
-  }
-
   const roles = parseAwsRolePageText(text);
-  if (!roles.length) {
-    return false;
-  }
-
-  browser.runtime.sendMessage({type: "awsRoles", roles});
+  browser.runtime.sendMessage({
+    type: roles.length ? "awsRoles" : "awsPageReady",
+    roles
+  });
   return true;
 }
 
@@ -493,9 +533,11 @@ class FirefoxWebDriver:
         self,
         geckodriver_executable="geckodriver",
         request_timeout_seconds=DEFAULT_BROWSER_TIMEOUT_SECONDS,
+        temp_directory=None,
     ):
         self.geckodriver_executable = geckodriver_executable
         self.request_timeout_seconds = request_timeout_seconds
+        self.temp_directory = temp_directory
         self.port = find_free_port()
         self.base_url = "http://127.0.0.1:{}".format(self.port)
         self.process = None
@@ -506,7 +548,11 @@ class FirefoxWebDriver:
         self.process_group_id = None
 
     def start(self):
-        self.log_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+        self.log_file = tempfile.TemporaryFile(
+            mode="w+t",
+            encoding="utf-8",
+            dir=self.temp_directory,
+        )
         popen_kwargs = {
             "stdout": self.log_file,
             "stderr": subprocess.STDOUT,
@@ -726,16 +772,28 @@ def capture_saml_response_with_firefox(
     geckodriver_executable="geckodriver",
     google_username=None,
 ):
+    temp_root = select_browser_capture_temp_root()
+    if Path(temp_root) != Path(tempfile.gettempdir()):
+        print(
+            "Default temporary filesystem lacks free space; using {}.".format(
+                temp_root,
+            ),
+            flush=True,
+        )
     driver = FirefoxWebDriver(
         geckodriver_executable=geckodriver_executable,
         request_timeout_seconds=min(
             timeout_seconds,
             WEBDRIVER_COMMAND_TIMEOUT_SECONDS,
         ),
+        temp_directory=temp_root,
     )
 
     try:
-        with tempfile.TemporaryDirectory(prefix='aws-google-auth-firefox-') as temp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix='aws-google-auth-firefox-',
+            dir=temp_root,
+        ) as temp_dir:
             extension_path = Path(temp_dir) / "aws_google_auth_saml_capture.xpi"
             build_firefox_capture_extension(extension_path)
             launch_profile_path = profile_path

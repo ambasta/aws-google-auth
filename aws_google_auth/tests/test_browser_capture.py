@@ -11,6 +11,30 @@ from aws_google_auth import browser_capture
 
 class TestBrowserCapture(unittest.TestCase):
 
+    @patch('aws_google_auth.browser_capture.shutil.disk_usage', spec=True)
+    @patch('aws_google_auth.browser_capture.tempfile.gettempdir', spec=True)
+    def test_browser_capture_temp_root_falls_back_when_default_is_full(
+        self,
+        mock_gettempdir,
+        mock_disk_usage,
+    ):
+        mock_gettempdir.return_value = "/tmp"
+        mock_disk_usage.side_effect = [
+            Mock(free=0),
+            Mock(free=browser_capture.BROWSER_CAPTURE_MINIMUM_FREE_BYTES),
+        ]
+
+        with patch.dict(
+            browser_capture.os.environ,
+            {"AWS_GOOGLE_AUTH_TMPDIR": ""},
+        ):
+            selected = browser_capture.select_browser_capture_temp_root()
+
+        self.assertEqual(
+            str(Path.home() / ".cache" / "aws-google-auth" / "tmp"),
+            selected,
+        )
+
     def test_firefox_webdriver_defaults_to_browser_capture_timeout(self):
         driver = browser_capture.FirefoxWebDriver()
 
@@ -453,6 +477,11 @@ class TestBrowserCapture(unittest.TestCase):
                 self.assertIn("aws_roles.js", archive.namelist())
                 manifest = archive.read("manifest.json").decode("utf-8")
                 self.assertIn("https://signin.aws.amazon.com/*", manifest)
+                background = archive.read("background.js").decode("utf-8")
+                role_scraper = archive.read("aws_roles.js").decode("utf-8")
+                self.assertIn('message.type !== "awsPageReady"', background)
+                self.assertIn('browser.storage.local.get(["samlResponse"])', background)
+                self.assertIn('type: roles.length ? "awsRoles" : "awsPageReady"', role_scraper)
 
     def test_clone_firefox_profile_keeps_storage_but_skips_live_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -524,6 +553,7 @@ class TestBrowserCapture(unittest.TestCase):
         mock_webdriver.assert_called_once_with(
             geckodriver_executable="/usr/bin/geckodriver",
             request_timeout_seconds=browser_capture.WEBDRIVER_COMMAND_TIMEOUT_SECONDS,
+            temp_directory=browser_capture.select_browser_capture_temp_root(),
         )
         session_kwargs = driver.create_session.call_args.kwargs
         self.assertEqual("/usr/bin/firefox", session_kwargs["firefox_executable"])
