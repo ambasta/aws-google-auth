@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 
 import base64
-import boto3
 import os
 import re
 import xml.etree.ElementTree as ET
-
 from datetime import UTC, datetime
 from threading import Thread
 
+import botocore.session
 from botocore.exceptions import ClientError, ProfileNotFound
 
 from aws_google_auth.google import ExpectedGoogleException
@@ -26,7 +25,7 @@ class Amazon:
             profile = os.environ.get("AWS_PROFILE")
             if profile is not None:
                 del os.environ["AWS_PROFILE"]
-            client = boto3.client("sts", region_name=self.config.region)
+            client = botocore.session.Session().create_client("sts", region_name=self.config.region)
             if profile is not None:
                 os.environ["AWS_PROFILE"] = profile
             return client
@@ -116,15 +115,16 @@ class Amazon:
 
     def resolve_aws_aliases(self, roles):
         def resolve_aws_alias(role, principal, aws_dict):
-            session = boto3.session.Session(region_name=self.config.region)
+            session = botocore.session.Session()
 
-            sts = session.client("sts")
+            sts = session.create_client("sts", region_name=self.config.region)
             saml = sts.assume_role_with_saml(
                 RoleArn=role, PrincipalArn=principal, SAMLAssertion=self.base64_encoded_saml
             )
 
-            iam = session.client(
+            iam = session.create_client(
                 "iam",
+                region_name=self.config.region,
                 aws_access_key_id=saml["Credentials"]["AccessKeyId"],
                 aws_secret_access_key=saml["Credentials"]["SecretAccessKey"],
                 aws_session_token=saml["Credentials"]["SessionToken"],
@@ -134,8 +134,9 @@ class Amazon:
                 account_alias = response["AccountAliases"][0]
                 aws_dict[role.split(":")[4]] = account_alias
             except:
-                sts = session.client(
+                sts = session.create_client(
                     "sts",
+                    region_name=self.config.region,
                     aws_access_key_id=saml["Credentials"]["AccessKeyId"],
                     aws_secret_access_key=saml["Credentials"]["SecretAccessKey"],
                     aws_session_token=saml["Credentials"]["SessionToken"],

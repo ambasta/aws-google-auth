@@ -32,7 +32,7 @@ classifiers = [
 ]
 dependencies = [
     "beautifulsoup4>=4.15.0",
-    "boto3>=1.43.105",
+    "botocore>=1.43.105",
     "filelock>=4.0.6",
     "keyring>=25.7.0",
     "keyrings.alt>=5.0.2",
