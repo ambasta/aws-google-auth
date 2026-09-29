@@ -1,3 +1,4 @@
+import json
 import signal
 import subprocess
 import tempfile
@@ -5,8 +6,14 @@ import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import ANY, Mock, PropertyMock, call, patch
+from urllib.parse import quote
 
 from aws_google_auth import browser_capture
+
+
+def captured_url(saml_response, aws_roles=()):
+    payload = json.dumps({"samlResponse": saml_response, "awsRoles": list(aws_roles)})
+    return "moz-extension://capture/captured.html#" + quote(payload)
 
 
 class TestBrowserCapture(unittest.TestCase):
@@ -311,11 +318,9 @@ class TestBrowserCapture(unittest.TestCase):
             chooser_url,
             chooser_url,
             "https://accounts.google.com/v3/signin/challenge/pwd?continue=aws",
-            "moz-extension://capture/captured.html",
+            captured_url("YWJjZA=="),
         ])
         type(driver).current_url = current_url
-        driver.find_element.side_effect = ["saml-element-id", "labels-element-id"]
-        driver.get_element_property.side_effect = ["YWJjZA==", "[]"]
         mock_webdriver.return_value = driver
 
         clock_values = [index * 0.5 for index in range(11)]
@@ -360,11 +365,9 @@ class TestBrowserCapture(unittest.TestCase):
         driver = Mock()
         current_url = PropertyMock(side_effect=[
             chooser_url,
-            "moz-extension://capture/captured.html",
+            captured_url("YWJjZA=="),
         ])
         type(driver).current_url = current_url
-        driver.find_element.side_effect = ["saml-element-id", "labels-element-id"]
-        driver.get_element_property.side_effect = ["YWJjZA==", "[]"]
         mock_webdriver.return_value = driver
 
         with (
@@ -441,6 +444,72 @@ class TestBrowserCapture(unittest.TestCase):
         )
         driver.quit.assert_called_once_with()
 
+    def test_captured_result_from_url_reads_the_capture_page_fragment(self):
+        result = browser_capture.captured_result_from_url(captured_url("YWJjZA==", [
+            {"accountName": "example-prod", "accountId": "111111111111", "roleName": "Admin"},
+        ]))
+
+        self.assertEqual("YWJjZA==", result.saml_response)
+        self.assertEqual({"111111111111": "example-prod"}, result.account_aliases)
+
+    def test_captured_result_from_url_ignores_pages_without_a_capture(self):
+        for url in (
+            "https://signin.aws.amazon.com/saml",
+            "https://example.com/captured.html#" + quote(json.dumps({"samlResponse": "YWJjZA=="})),
+            "moz-extension://capture/captured.html",
+            "moz-extension://capture/captured.html#not-json",
+            "moz-extension://capture/captured.html#" + quote(json.dumps(["YWJjZA=="])),
+            captured_url(""),
+        ):
+            with self.subTest(url=url):
+                self.assertIsNone(browser_capture.captured_result_from_url(url))
+
+    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
+    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    def test_capture_progress_does_not_print_the_saml_response(
+        self,
+        mock_build_extension,
+        mock_webdriver,
+    ):
+        driver = Mock()
+        driver.current_url = captured_url("c2VjcmV0LWFzc2VydGlvbg==")
+        driver.title.side_effect = browser_capture.WebDriverError("privileged scope")
+        mock_webdriver.return_value = driver
+
+        with patch('builtins.print') as mock_print:
+            result = browser_capture.capture_saml_response_with_firefox(
+                "https://accounts.google.com/o/saml2/initsso",
+                timeout_seconds=120,
+            )
+
+        self.assertEqual("c2VjcmV0LWFzc2VydGlvbg==", result.saml_response)
+        printed = " ".join(str(item) for entry in mock_print.call_args_list for item in entry.args)
+        self.assertIn("moz-extension://capture/captured.html", printed)
+        self.assertNotIn("c2VjcmV0LWFzc2VydGlvbg", printed)
+
+    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
+    def test_capture_quits_firefox_before_removing_its_temporary_profile(
+        self,
+        mock_webdriver,
+    ):
+        driver = Mock()
+        driver.current_url = captured_url("YWJjZA==")
+        mock_webdriver.return_value = driver
+        extension_paths = []
+        profile_existed_at_quit = []
+        driver.install_addon.side_effect = extension_paths.append
+        driver.quit.side_effect = lambda: profile_existed_at_quit.append(
+            extension_paths[0].parent.exists()
+        )
+
+        browser_capture.capture_saml_response_with_firefox(
+            "https://accounts.google.com/o/saml2/initsso",
+            timeout_seconds=120,
+        )
+
+        self.assertEqual([True], profile_existed_at_quit)
+        self.assertFalse(extension_paths[0].parent.exists())
+
     def test_firefox_profile_storage_copy_is_limited_to_auth_origins(self):
         self.assertTrue(
             browser_capture.should_copy_firefox_storage_origin(
@@ -482,6 +551,9 @@ class TestBrowserCapture(unittest.TestCase):
                 self.assertIn('message.type !== "awsPageReady"', background)
                 self.assertIn('browser.storage.local.get(["samlResponse"])', background)
                 self.assertIn('type: roles.length ? "awsRoles" : "awsPageReady"', role_scraper)
+                self.assertIn('"#" + encodeURIComponent(payload)', background)
+                captured_page = archive.read("captured.html").decode("utf-8")
+                self.assertNotIn("saml-response", captured_page)
 
     def test_clone_firefox_profile_keeps_storage_but_skips_live_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -527,12 +599,9 @@ class TestBrowserCapture(unittest.TestCase):
         mock_webdriver,
     ):
         driver = Mock()
-        driver.current_url = "moz-extension://capture/captured.html"
-        driver.find_element.side_effect = ["saml-element-id", "labels-element-id"]
-        driver.get_element_property.side_effect = [
-            "YWJjZA==",
-            '[{"accountName":"example-prod","accountId":"111111111111","roleName":"Admin"}]',
-        ]
+        driver.current_url = captured_url("YWJjZA==", [
+            {"accountName": "example-prod", "accountId": "111111111111", "roleName": "Admin"},
+        ])
         mock_webdriver.return_value = driver
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -558,7 +627,4 @@ class TestBrowserCapture(unittest.TestCase):
         session_kwargs = driver.create_session.call_args.kwargs
         self.assertEqual("/usr/bin/firefox", session_kwargs["firefox_executable"])
         self.assertNotEqual(str(profile_path), session_kwargs["profile_path"])
-        self.assertEqual([
-            call("saml-element-id", "value"),
-            call("labels-element-id", "textContent"),
-        ], driver.get_element_property.mock_calls)
+        driver.find_element.assert_not_called()

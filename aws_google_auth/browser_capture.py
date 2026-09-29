@@ -179,12 +179,22 @@ function extractSamlResponse(details) {
   return parseFormEncoded(decodeRawRequestBody(details.requestBody.raw));
 }
 
+// WebDriver cannot read privileged extension pages, so the page URL carries
+// the captured values back to the capture loop.
 function openCapturedPage(tabId) {
   if (typeof tabId !== "number" || tabId < 0) {
     return;
   }
 
-  browser.tabs.update(tabId, {url: browser.runtime.getURL("captured.html")});
+  browser.storage.local.get(["samlResponse", "awsRoles"]).then((data) => {
+    const payload = JSON.stringify({
+      samlResponse: data.samlResponse,
+      awsRoles: data.awsRoles || []
+    });
+    browser.tabs.update(tabId, {
+      url: browser.runtime.getURL("captured.html") + "#" + encodeURIComponent(payload)
+    });
+  });
 }
 
 function scheduleFallbackCapture(tabId) {
@@ -319,7 +329,6 @@ scrapeAndSendRoles();
   <body>
     <h1>SAMLResponse captured</h1>
     <p>You can return to the terminal.</p>
-    <textarea id="saml-response" style="width: 100%; height: 12rem;"></textarea>
     <pre id="aws-role-labels"></pre>
     <script src="captured.js"></script>
   </body>
@@ -327,17 +336,12 @@ scrapeAndSendRoles();
 """
 
     captured_js = """
-function render() {
-  browser.storage.local.get(["samlResponse", "capturedUrl", "awsRoles"]).then((data) => {
-    if (data.samlResponse) {
-      document.getElementById("saml-response").value = data.samlResponse;
-    }
-    document.getElementById("aws-role-labels").textContent = JSON.stringify(data.awsRoles || []);
-  });
-}
-
-render();
-setInterval(render, 250);
+browser.storage.local.get(["awsRoles"]).then((data) => {
+  const labels = (data.awsRoles || []).map(
+    (role) => `${role.accountName} (${role.accountId}): ${role.roleName}`
+  );
+  document.getElementById("aws-role-labels").textContent = labels.join("\n");
+});
 """
 
     with zipfile.ZipFile(output_path, 'w') as archive:
@@ -346,6 +350,32 @@ setInterval(render, 250);
         archive.writestr("aws_roles.js", aws_roles_js)
         archive.writestr("captured.html", captured_html)
         archive.writestr("captured.js", captured_js)
+
+
+def captured_result_from_url(url):
+    parsed_url = urllib_parse.urlsplit(url)
+    if parsed_url.scheme != "moz-extension" or parsed_url.path != "/captured.html":
+        return None
+
+    try:
+        payload = json.loads(urllib_parse.unquote(parsed_url.fragment))
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    saml_response = payload.get("samlResponse")
+    if not isinstance(saml_response, str) or not saml_response:
+        return None
+
+    aws_roles = payload.get("awsRoles")
+    if not isinstance(aws_roles, list):
+        aws_roles = []
+    return BrowserCaptureResult(
+        saml_response=saml_response,
+        account_aliases=account_aliases_from_browser_roles(aws_roles),
+        aws_roles=aws_roles,
+    )
 
 
 def account_aliases_from_browser_roles(aws_roles):
@@ -794,159 +824,142 @@ def capture_saml_response_with_firefox(
             prefix='aws-google-auth-firefox-',
             dir=temp_root,
         ) as temp_dir:
-            extension_path = Path(temp_dir) / "aws_google_auth_saml_capture.xpi"
-            build_firefox_capture_extension(extension_path)
-            launch_profile_path = profile_path
-            if profile_path:
-                print(
-                    "Copying Firefox sign-in state into a temporary profile...",
-                    flush=True,
-                )
-                launch_profile_path = clone_firefox_profile(
-                    profile_path,
-                    Path(temp_dir) / "profile",
-                    progress=lambda message: print(message, flush=True),
-                )
-                print(
-                    "Using a temporary copy of the Firefox profile for capture.",
-                    flush=True,
-                )
-
-            print("Starting geckodriver WebDriver service...", flush=True)
-            driver.start()
-            print("Creating Firefox WebDriver session...", flush=True)
-            driver.create_session(
-                firefox_executable=executable_path,
-                profile_path=launch_profile_path,
-            )
-            print("Firefox WebDriver session started.", flush=True)
-            driver.set_window_rect()
-            driver.install_addon(extension_path)
-            print("SAML capture extension installed.", flush=True)
-            deadline = time.monotonic() + timeout_seconds
-            driver.request_deadline = deadline
-            driver.get(login_url)
-            print("Google SSO page loaded in Firefox.", flush=True)
-
-            next_status_at = 0
-            last_url = None
-            next_google_account_click_at = 0
-            google_account_chooser_since = None
-            google_account_click_requested = False
-            google_account_chooser_reloads = 0
-            while time.monotonic() < deadline:
-                current_url = driver.current_url
-                now = time.monotonic()
-                if current_url != last_url or now >= next_status_at:
-                    try:
-                        title = driver.title()
-                    except WebDriverError:
-                        title = ""
-                    print("Waiting for SAMLResponse; current page: {} {}".format(title, current_url), flush=True)
-                    last_url = current_url
-                    next_status_at = now + 10
-
-                is_google_account_chooser = is_google_account_chooser_url(
-                    current_url,
-                )
-                if is_google_account_chooser:
-                    if google_account_chooser_since is None:
-                        google_account_chooser_since = now
-                else:
-                    google_account_chooser_since = None
-                    google_account_click_requested = False
-
-                should_click_google_account = all(
-                    (
-                        google_username,
-                        now >= next_google_account_click_at,
-                        is_google_account_chooser,
+            # Firefox must exit before its temporary profile is removed.
+            try:
+                extension_path = Path(temp_dir) / "aws_google_auth_saml_capture.xpi"
+                build_firefox_capture_extension(extension_path)
+                launch_profile_path = profile_path
+                if profile_path:
+                    print(
+                        "Copying Firefox sign-in state into a temporary profile...",
+                        flush=True,
                     )
+                    launch_profile_path = clone_firefox_profile(
+                        profile_path,
+                        Path(temp_dir) / "profile",
+                        progress=lambda message: print(message, flush=True),
+                    )
+                    print(
+                        "Using a temporary copy of the Firefox profile for capture.",
+                        flush=True,
+                    )
+
+                print("Starting geckodriver WebDriver service...", flush=True)
+                driver.start()
+                print("Creating Firefox WebDriver session...", flush=True)
+                driver.create_session(
+                    firefox_executable=executable_path,
+                    profile_path=launch_profile_path,
                 )
-                if should_click_google_account:
-                    clicked_google_account = click_google_account_if_present(
-                        driver,
-                        google_username,
+                print("Firefox WebDriver session started.", flush=True)
+                driver.set_window_rect()
+                driver.install_addon(extension_path)
+                print("SAML capture extension installed.", flush=True)
+                deadline = time.monotonic() + timeout_seconds
+                driver.request_deadline = deadline
+                driver.get(login_url)
+                print("Google SSO page loaded in Firefox.", flush=True)
+
+                next_status_at = 0
+                last_url = None
+                next_google_account_click_at = 0
+                google_account_chooser_since = None
+                google_account_click_requested = False
+                google_account_chooser_reloads = 0
+                while time.monotonic() < deadline:
+                    current_url = driver.current_url
+                    now = time.monotonic()
+                    if current_url != last_url or now >= next_status_at:
+                        try:
+                            title = driver.title()
+                        except WebDriverError:
+                            title = ""
+                        # The captured page's fragment holds the SAMLResponse.
+                        page_url = urllib_parse.urldefrag(current_url).url
+                        print("Waiting for SAMLResponse; current page: {} {}".format(title, page_url), flush=True)
+                        last_url = current_url
+                        next_status_at = now + 10
+
+                    is_google_account_chooser = is_google_account_chooser_url(
+                        current_url,
                     )
-                    next_google_account_click_at = (
-                        now + GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS
+                    if is_google_account_chooser:
+                        if google_account_chooser_since is None:
+                            google_account_chooser_since = now
+                    else:
+                        google_account_chooser_since = None
+                        google_account_click_requested = False
+
+                    should_click_google_account = all(
+                        (
+                            google_username,
+                            now >= next_google_account_click_at,
+                            is_google_account_chooser,
+                        )
                     )
-                    if clicked_google_account:
-                        google_account_click_requested = True
+                    if should_click_google_account:
+                        clicked_google_account = click_google_account_if_present(
+                            driver,
+                            google_username,
+                        )
+                        next_google_account_click_at = (
+                            now + GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS
+                        )
+                        if clicked_google_account:
+                            google_account_click_requested = True
+                            print(
+                                "Requested Google account selection: {}".format(
+                                    google_username,
+                                ),
+                                flush=True,
+                            )
+
+                    chooser_wait_seconds = 0
+                    if google_account_chooser_since is not None:
+                        chooser_wait_seconds = now - google_account_chooser_since
+                    chooser_is_stalled = all((
+                        google_account_click_requested,
+                        chooser_wait_seconds >= GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS,
+                    ))
+                    if chooser_is_stalled:
+                        reload_limit = GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT
+                        if google_account_chooser_reloads >= reload_limit:
+                            raise WebDriverError(
+                                "Google account chooser did not advance after "
+                                "selecting {}. Close the capture window and retry."
+                                .format(google_username)
+                            )
+
+                        google_account_chooser_reloads += 1
                         print(
-                            "Requested Google account selection: {}".format(
-                                google_username,
+                            "Google account chooser did not advance; reloading "
+                            "the SSO page (attempt {}/{}).".format(
+                                google_account_chooser_reloads,
+                                GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT,
                             ),
                             flush=True,
                         )
+                        driver.get(login_url)
+                        google_account_chooser_since = now
+                        google_account_click_requested = False
+                        next_google_account_click_at = 0
+                        time.sleep(0.25)
+                        continue
 
-                chooser_wait_seconds = 0
-                if google_account_chooser_since is not None:
-                    chooser_wait_seconds = now - google_account_chooser_since
-                chooser_is_stalled = all((
-                    google_account_click_requested,
-                    chooser_wait_seconds >= GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS,
-                ))
-                if chooser_is_stalled:
-                    reload_limit = GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT
-                    if google_account_chooser_reloads >= reload_limit:
-                        raise WebDriverError(
-                            "Google account chooser did not advance after "
-                            "selecting {}. Close the capture window and retry."
-                            .format(google_username)
-                        )
+                    captured_result = captured_result_from_url(current_url)
+                    if captured_result:
+                        return captured_result
 
-                    google_account_chooser_reloads += 1
-                    print(
-                        "Google account chooser did not advance; reloading "
-                        "the SSO page (attempt {}/{}).".format(
-                            google_account_chooser_reloads,
-                            GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT,
-                        ),
-                        flush=True,
-                    )
-                    driver.get(login_url)
-                    google_account_chooser_since = now
-                    google_account_click_requested = False
-                    next_google_account_click_at = 0
                     time.sleep(0.25)
-                    continue
 
-                if current_url.startswith("moz-extension://"):
-                    try:
-                        element_id = driver.find_element("#saml-response")
-                        saml_response = driver.get_element_property(element_id, "value")
-                        if not saml_response:
-                            saml_response = driver.get_element_attribute(element_id, "value")
-                    except WebDriverError:
-                        saml_response = None
-
-                    if saml_response:
-                        aws_roles = []
-                        try:
-                            labels_element_id = driver.find_element("#aws-role-labels")
-                            labels_json = driver.get_element_property(labels_element_id, "textContent")
-                            if labels_json:
-                                aws_roles = json.loads(labels_json)
-                        except (TypeError, ValueError, WebDriverError):
-                            aws_roles = []
-
-                        return BrowserCaptureResult(
-                            saml_response=saml_response,
-                            account_aliases=account_aliases_from_browser_roles(aws_roles),
-                            aws_roles=aws_roles,
-                        )
-
-                time.sleep(0.25)
-
-            raise TimeoutError(
-                "Timed out waiting for a browser SAMLResponse POST. "
-                "Complete Google sign-in in the Firefox window and continue to AWS."
-            )
+                raise TimeoutError(
+                    "Timed out waiting for a browser SAMLResponse POST. "
+                    "Complete Google sign-in in the Firefox window and continue to AWS."
+                )
+            finally:
+                driver.quit()
     except (OSError, requests.RequestException, WebDriverError) as ex:
         raise RuntimeError(
             "Could not launch Firefox through geckodriver WebDriver. Ensure Firefox is installed "
             "and geckodriver is available on PATH. Details: {}".format(ex)
         ) from ex
-    finally:
-        driver.quit()
