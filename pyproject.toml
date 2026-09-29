@@ -40,7 +40,6 @@ dependencies = [
     "Pillow>=12.3.0",
     "requests>=2.34.2",
     "tabulate>=0.10.0",
-    "tzlocal>=5.4.4",
 ]
 
 [project.optional-dependencies]

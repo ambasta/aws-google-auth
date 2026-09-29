@@ -10,7 +10,6 @@ from urllib import parse as urllib_parse
 
 import keyring
 from bs4 import BeautifulSoup
-from tzlocal import get_localzone
 
 from aws_google_auth import _version
 from aws_google_auth import amazon
@@ -402,7 +401,7 @@ def process_auth(args, config):
             config.role_arn, config.provider = util.Util.pick_a_role(roles)
     if not config.quiet:
         print("Assuming " + config.role_arn)
-        print("Credentials Expiration: " + format(amazon_client.expiration.astimezone(get_localzone())))
+        print("Credentials Expiration: " + format(amazon_client.expiration.astimezone()))
 
     if config.print_creds:
         amazon_client.print_export_line()
