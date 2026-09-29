@@ -29,11 +29,9 @@ def __appid_verifier__fetch_json(app_id):
         # open redirectors within the target domain by unauthorized
         # parties.
         if 300 <= resp.status_code < 400:
-            if resp.headers.get('FIDO-AppID-Redirect-Authorized') != \
-                    'true':
-                raise ValueError('Redirect must set '
-                                 'FIDO-AppID-Redirect-Authorized: true')
-            target = resp.headers['location']
+            if resp.headers.get("FIDO-AppID-Redirect-Authorized") != "true":
+                raise ValueError("Redirect must set FIDO-AppID-Redirect-Authorized: true")
+            target = resp.headers["location"]
         else:
             return resp.json()
 
@@ -63,14 +61,12 @@ def u2f_auth(challenges, facet):
                 remove = True
                 for challenge in challenges:
                     try:
-                        return u2f.authenticate(device, json.dumps(challenge),
-                                                facet)
+                        return u2f.authenticate(device, json.dumps(challenge), facet)
                     except exc.APDUError as e:
                         if e.code == APDU_USE_NOT_SATISFIED:
                             remove = False
                             if not prompted:
-                                print('Touch the flashing U2F device to '
-                                      'authenticate...')
+                                print("Touch the flashing U2F device to authenticate...")
                                 prompted = True
                         else:
                             pass

@@ -10,13 +10,12 @@ from aws_google_auth import configuration
 
 
 class TestConfigurationMethods(unittest.TestCase):
-
     def test_config_profile(self):
-        self.assertEqual(configuration.Configuration.config_profile('default'), 'default')
-        self.assertEqual(configuration.Configuration.config_profile('DEFAULT'), 'DEFAULT')
-        self.assertEqual(configuration.Configuration.config_profile('testing'), 'profile testing')
-        self.assertEqual(configuration.Configuration.config_profile(None), 'profile None')
-        self.assertEqual(configuration.Configuration.config_profile(123456), 'profile 123456')
+        self.assertEqual(configuration.Configuration.config_profile("default"), "default")
+        self.assertEqual(configuration.Configuration.config_profile("DEFAULT"), "DEFAULT")
+        self.assertEqual(configuration.Configuration.config_profile("testing"), "profile testing")
+        self.assertEqual(configuration.Configuration.config_profile(None), "profile None")
+        self.assertEqual(configuration.Configuration.config_profile(123456), "profile 123456")
 
     def test_duration_invalid_values(self):
         # Duration must be an integer
@@ -57,7 +56,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.sp_id = "sample_sp_id"
         c.password = "hunter2"
         c.username = "sample_username"
-        c.duration = (valid.max_duration + 1)
+        c.duration = valid.max_duration + 1
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
         self.assertIn("Expected duration to be less than or equal to max_duration", str(e.exception))
@@ -75,7 +74,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.duration = c.max_duration
         self.assertEqual(c.duration, c.max_duration)
         c.raise_if_invalid()
-        c.duration = (c.max_duration - 1)
+        c.duration = c.max_duration - 1
         self.assertEqual(c.duration, c.max_duration - 1)
         c.raise_if_invalid()
 
@@ -292,7 +291,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.password = "hunter2"
         c.sp_id = "sample_sp_id"
         c.username = "sample_username"
-        self.assertEqual(c.profile, 'sts')
+        self.assertEqual(c.profile, "sts")
         c.raise_if_invalid()
 
     def test_region_invalid_values(self):
@@ -426,7 +425,7 @@ class TestConfigurationMethods(unittest.TestCase):
     def test_unicode_password(self):
         c = configuration.Configuration()
         c.region = "sample_region"
-        c.password = u"hunter2"
+        c.password = "hunter2"
         c.idp_id = "sample_idp_id"
         c.sp_id = "sample_sp_id"
         c.username = "sample_username"
@@ -434,20 +433,22 @@ class TestConfigurationMethods(unittest.TestCase):
 
 
 class TestSharedSettings(unittest.TestCase):
-
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.config_file = os.path.join(self.temp_dir.name, 'config')
-        patcher = mock.patch.dict(os.environ, {
-            'AWS_CONFIG_FILE': self.config_file,
-            'AWS_SHARED_CREDENTIALS_FILE': os.path.join(self.temp_dir.name, 'credentials'),
-        })
+        self.config_file = os.path.join(self.temp_dir.name, "config")
+        patcher = mock.patch.dict(
+            os.environ,
+            {
+                "AWS_CONFIG_FILE": self.config_file,
+                "AWS_SHARED_CREDENTIALS_FILE": os.path.join(self.temp_dir.name, "credentials"),
+            },
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.temp_dir.cleanup)
 
     def write_config(self, text):
-        with open(self.config_file, 'w') as config_file:
+        with open(self.config_file, "w") as config_file:
             config_file.write(textwrap.dedent(text))
 
     def read(self, profile):
@@ -466,10 +467,10 @@ class TestSharedSettings(unittest.TestCase):
             google_config.duration = 900
         """)
 
-        c = self.read('one')
+        c = self.read("one")
 
-        self.assertEqual('one_idp', c.idp_id)
-        self.assertEqual('eu-west-1', c.region)
+        self.assertEqual("one_idp", c.idp_id)
+        self.assertEqual("eu-west-1", c.region)
         self.assertEqual(900, c.duration)
 
     def test_new_profile_inherits_from_default(self):
@@ -484,11 +485,11 @@ class TestSharedSettings(unittest.TestCase):
             google_config.google_idp_id = one_idp
         """)
 
-        c = self.read('new')
+        c = self.read("new")
 
-        self.assertEqual('default_idp', c.idp_id)
-        self.assertEqual('default_sp', c.sp_id)
-        self.assertEqual('eu-west-1', c.region)
+        self.assertEqual("default_idp", c.idp_id)
+        self.assertEqual("default_sp", c.sp_id)
+        self.assertEqual("eu-west-1", c.region)
         self.assertEqual(1800, c.duration)
 
     def test_new_profile_inherits_values_google_profiles_agree_on(self):
@@ -511,11 +512,11 @@ class TestSharedSettings(unittest.TestCase):
             google_config.duration = 3600
         """)
 
-        c = self.read('new')
+        c = self.read("new")
 
-        self.assertEqual('idp', c.idp_id)
-        self.assertEqual('sp', c.sp_id)
-        self.assertEqual('ap-south-1', c.region)
+        self.assertEqual("idp", c.idp_id)
+        self.assertEqual("sp", c.sp_id)
+        self.assertEqual("ap-south-1", c.region)
         self.assertEqual(3600, c.duration)
         # The profiles disagree, so nothing is inherited.
         self.assertIsNone(c.username)
@@ -527,8 +528,8 @@ class TestSharedSettings(unittest.TestCase):
             google_config.google_username = None
         """)
 
-        c = self.read('new')
+        c = self.read("new")
 
-        self.assertEqual('idp', c.idp_id)
+        self.assertEqual("idp", c.idp_id)
         self.assertIsNone(c.username)
         self.assertEqual(c.max_duration, c.duration)

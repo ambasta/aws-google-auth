@@ -59,9 +59,7 @@ def browser_capture_temp_root_candidates():
     configured_root = os.environ.get("AWS_GOOGLE_AUTH_TMPDIR")
     default_root = tempfile.gettempdir()
     home_cache_root = Path.home() / ".cache" / "aws-google-auth" / "tmp"
-    xdg_cache_root = Path(
-        os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
-    ) / "aws-google-auth" / "tmp"
+    xdg_cache_root = Path(os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")) / "aws-google-auth" / "tmp"
     candidates = []
     for candidate in (
         configured_root,
@@ -90,8 +88,7 @@ def select_browser_capture_temp_root():
 
     raise RuntimeError(
         "Browser SAML capture needs at least {} MiB of free temporary space. "
-        "Set AWS_GOOGLE_AUTH_TMPDIR to a writable filesystem. Checked: {}"
-        .format(
+        "Set AWS_GOOGLE_AUTH_TMPDIR to a writable filesystem. Checked: {}".format(
             BROWSER_CAPTURE_MINIMUM_FREE_BYTES // (1024 * 1024),
             ", ".join(checked),
         )
@@ -111,7 +108,7 @@ def process_is_running(process_id):
 def is_orphaned_capture_directory(path):
     try:
         owner_process_id = int((path / BROWSER_CAPTURE_OWNER_FILE).read_text())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         owner_process_id = None
 
     # os.kill() cannot probe a process on Windows without terminating it.
@@ -215,7 +212,7 @@ def read_firefox_ini(path):
     parser = configparser.RawConfigParser(strict=False)
     try:
         parser.read(path, encoding="utf-8")
-    except (OSError, configparser.Error):
+    except OSError, configparser.Error:
         pass
     return parser
 
@@ -233,22 +230,24 @@ def default_firefox_profile_candidates(root):
         if section.startswith("Install"):
             candidates.append((profiles.get(section, "Default", fallback=None), True))
 
-    profile_sections = [
-        section for section in profiles.sections() if section.startswith("Profile")
-    ]
+    profile_sections = [section for section in profiles.sections() if section.startswith("Profile")]
     for section in profile_sections:
         if profiles.get(section, "Default", fallback=None) == "1":
-            candidates.append((
-                profiles.get(section, "Path", fallback=None),
-                profiles.get(section, "IsRelative", fallback="1") == "1",
-            ))
+            candidates.append(
+                (
+                    profiles.get(section, "Path", fallback=None),
+                    profiles.get(section, "IsRelative", fallback="1") == "1",
+                )
+            )
     for name in ("default-release", "default"):
         for section in profile_sections:
             if profiles.get(section, "Name", fallback=None) == name:
-                candidates.append((
-                    profiles.get(section, "Path", fallback=None),
-                    profiles.get(section, "IsRelative", fallback="1") == "1",
-                ))
+                candidates.append(
+                    (
+                        profiles.get(section, "Path", fallback=None),
+                        profiles.get(section, "IsRelative", fallback="1") == "1",
+                    )
+                )
 
     for path, is_relative in candidates:
         if path:
@@ -284,12 +283,12 @@ FIREFOX_PROFILE_SQLITE_SUFFIXES = ("-shm", "-wal")
 
 
 def extract_saml_response_from_post_data(post_data):
-    if not post_data or 'SAMLResponse' not in post_data:
+    if not post_data or "SAMLResponse" not in post_data:
         return None
 
     parsed = urllib_parse.parse_qs(post_data)
-    if parsed.get('SAMLResponse'):
-        return parsed['SAMLResponse'][0]
+    if parsed.get("SAMLResponse"):
+        return parsed["SAMLResponse"][0]
 
     return None
 
@@ -521,7 +520,7 @@ browser.storage.local.get(["awsRoles"]).then((data) => {
 });
 """
 
-    with zipfile.ZipFile(output_path, 'w') as archive:
+    with zipfile.ZipFile(output_path, "w") as archive:
         archive.writestr("manifest.json", json.dumps(manifest))
         archive.writestr("background.js", background_js)
         archive.writestr("aws_roles.js", aws_roles_js)
@@ -570,9 +569,7 @@ def account_aliases_from_browser_roles(aws_roles):
 
 
 def css_string_literal(value):
-    return '"{}"'.format(
-        str(value).replace("\\", "\\\\").replace('"', '\\"')
-    )
+    return '"{}"'.format(str(value).replace("\\", "\\\\").replace('"', '\\"'))
 
 
 def xpath_string_literal(value):
@@ -583,9 +580,7 @@ def xpath_string_literal(value):
         return '"{}"'.format(value)
 
     parts = value.split("'")
-    return "concat({})".format(
-        ", \"'\", ".join("'{}'".format(part) for part in parts)
-    )
+    return "concat({})".format(', "\'", '.join("'{}'".format(part) for part in parts))
 
 
 def click_google_account_if_present(driver, google_username):
@@ -842,15 +837,19 @@ class FirefoxWebDriver:
         if firefox_executable:
             firefox_options["binary"] = firefox_executable
 
-        value = self.request("POST", "/session", {
-            "capabilities": {
-                "alwaysMatch": {
-                    "browserName": "firefox",
-                    "pageLoadStrategy": "none",
-                    "moz:firefoxOptions": firefox_options,
+        value = self.request(
+            "POST",
+            "/session",
+            {
+                "capabilities": {
+                    "alwaysMatch": {
+                        "browserName": "firefox",
+                        "pageLoadStrategy": "none",
+                        "moz:firefoxOptions": firefox_options,
+                    },
                 },
             },
-        })
+        )
         self.session_id = value["sessionId"]
 
     def install_addon(self, path):
@@ -930,9 +929,7 @@ class FirefoxWebDriver:
         if not self.process:
             return
 
-        has_process_group = (
-            self.process_group_id is not None and hasattr(os, "killpg")
-        )
+        has_process_group = self.process_group_id is not None and hasattr(os, "killpg")
         self.signal_process(signal.SIGTERM)
         if has_process_group:
             # Keep the group leader unreaped until every child has had a bounded
@@ -960,7 +957,7 @@ class FirefoxWebDriver:
                     "/session/{}".format(self.session_id),
                     timeout_seconds=WEBDRIVER_QUIT_TIMEOUT_SECONDS,
                 )
-            except (requests.RequestException, WebDriverError):
+            except requests.RequestException, WebDriverError:
                 pass
         self.session_id = None
 
@@ -1005,12 +1002,15 @@ def capture_saml_response_with_firefox(
     )
 
     try:
-        with exit_cleanly_on_termination(), tempfile.TemporaryDirectory(
-            prefix=BROWSER_CAPTURE_TEMP_PREFIX,
-            dir=temp_root,
-            # A failed removal is retried by the next capture's sweep.
-            ignore_cleanup_errors=True,
-        ) as temp_dir:
+        with (
+            exit_cleanly_on_termination(),
+            tempfile.TemporaryDirectory(
+                prefix=BROWSER_CAPTURE_TEMP_PREFIX,
+                dir=temp_root,
+                # A failed removal is retried by the next capture's sweep.
+                ignore_cleanup_errors=True,
+            ) as temp_dir,
+        ):
             (Path(temp_dir) / BROWSER_CAPTURE_OWNER_FILE).write_text(str(os.getpid()))
             # Firefox must exit before its temporary profile is removed.
             try:
@@ -1090,9 +1090,7 @@ def capture_saml_response_with_firefox(
                             driver,
                             google_username,
                         )
-                        next_google_account_click_at = (
-                            now + GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS
-                        )
+                        next_google_account_click_at = now + GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS
                         if clicked_google_account:
                             google_account_click_requested = True
                             print(
@@ -1105,23 +1103,23 @@ def capture_saml_response_with_firefox(
                     chooser_wait_seconds = 0
                     if google_account_chooser_since is not None:
                         chooser_wait_seconds = now - google_account_chooser_since
-                    chooser_is_stalled = all((
-                        google_account_click_requested,
-                        chooser_wait_seconds >= GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS,
-                    ))
+                    chooser_is_stalled = all(
+                        (
+                            google_account_click_requested,
+                            chooser_wait_seconds >= GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS,
+                        )
+                    )
                     if chooser_is_stalled:
                         reload_limit = GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT
                         if google_account_chooser_reloads >= reload_limit:
                             raise WebDriverError(
                                 "Google account chooser did not advance after "
-                                "selecting {}. Close the capture window and retry."
-                                .format(google_username)
+                                "selecting {}. Close the capture window and retry.".format(google_username)
                             )
 
                         google_account_chooser_reloads += 1
                         print(
-                            "Google account chooser did not advance; reloading "
-                            "the SSO page (attempt {}/{}).".format(
+                            "Google account chooser did not advance; reloading the SSO page (attempt {}/{}).".format(
                                 google_account_chooser_reloads,
                                 GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT,
                             ),

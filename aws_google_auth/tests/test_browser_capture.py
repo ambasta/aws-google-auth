@@ -18,9 +18,8 @@ def captured_url(saml_response, aws_roles=()):
 
 
 class TestBrowserCapture(unittest.TestCase):
-
-    @patch('aws_google_auth.browser_capture.shutil.disk_usage', spec=True)
-    @patch('aws_google_auth.browser_capture.tempfile.gettempdir', spec=True)
+    @patch("aws_google_auth.browser_capture.shutil.disk_usage", spec=True)
+    @patch("aws_google_auth.browser_capture.tempfile.gettempdir", spec=True)
     def test_browser_capture_temp_root_falls_back_when_default_is_full(
         self,
         mock_gettempdir,
@@ -74,8 +73,7 @@ class TestBrowserCapture(unittest.TestCase):
         root = self.make_firefox_root(
             installs="[11457493C5A56847]\nDefault=missing.default-release\n",
             profiles=(
-                "[General]\nStartWithLastProfile=1\n"
-                "[Profile0]\nName=work\nIsRelative=1\nPath=work.profile\nDefault=1\n"
+                "[General]\nStartWithLastProfile=1\n[Profile0]\nName=work\nIsRelative=1\nPath=work.profile\nDefault=1\n"
             ),
             profile_dirs=("work.profile",),
         )
@@ -98,7 +96,7 @@ class TestBrowserCapture(unittest.TestCase):
         )
         self.assertIsNone(browser_capture.find_default_firefox_profile([empty_root]))
 
-    @patch('aws_google_auth.browser_capture.shutil.which', spec=True)
+    @patch("aws_google_auth.browser_capture.shutil.which", spec=True)
     def test_find_firefox_executable_searches_path(self, mock_which):
         mock_which.side_effect = lambda name: "/usr/bin/firefox-esr" if name == "firefox-esr" else None
 
@@ -140,7 +138,7 @@ class TestBrowserCapture(unittest.TestCase):
             },
         )
 
-    @patch('aws_google_auth.browser_capture.requests.request', spec=True)
+    @patch("aws_google_auth.browser_capture.requests.request", spec=True)
     def test_firefox_webdriver_uses_configured_timeout_for_commands(
         self,
         mock_request,
@@ -175,7 +173,7 @@ class TestBrowserCapture(unittest.TestCase):
             mock_request.mock_calls,
         )
 
-    @patch('aws_google_auth.browser_capture.requests.request', spec=True)
+    @patch("aws_google_auth.browser_capture.requests.request", spec=True)
     def test_firefox_webdriver_limits_command_to_capture_deadline(
         self,
         mock_request,
@@ -187,7 +185,7 @@ class TestBrowserCapture(unittest.TestCase):
         driver.request_deadline = 100
 
         with patch(
-            'aws_google_auth.browser_capture.time.monotonic',
+            "aws_google_auth.browser_capture.time.monotonic",
             return_value=95,
         ):
             driver.get("https://accounts.google.com/")
@@ -199,7 +197,7 @@ class TestBrowserCapture(unittest.TestCase):
             timeout=5,
         )
 
-    @patch('aws_google_auth.browser_capture.requests.request', spec=True)
+    @patch("aws_google_auth.browser_capture.requests.request", spec=True)
     def test_firefox_webdriver_rejects_command_after_capture_deadline(
         self,
         mock_request,
@@ -209,7 +207,7 @@ class TestBrowserCapture(unittest.TestCase):
 
         with (
             patch(
-                'aws_google_auth.browser_capture.time.monotonic',
+                "aws_google_auth.browser_capture.time.monotonic",
                 return_value=101,
             ),
             self.assertRaisesRegex(TimeoutError, "capture deadline elapsed"),
@@ -218,8 +216,8 @@ class TestBrowserCapture(unittest.TestCase):
 
         mock_request.assert_not_called()
 
-    @patch('aws_google_auth.browser_capture.subprocess.Popen', spec=True)
-    @patch('aws_google_auth.browser_capture.requests.get', spec=True)
+    @patch("aws_google_auth.browser_capture.subprocess.Popen", spec=True)
+    @patch("aws_google_auth.browser_capture.requests.get", spec=True)
     def test_firefox_webdriver_keeps_status_poll_timeout_short(
         self,
         mock_get,
@@ -260,8 +258,8 @@ class TestBrowserCapture(unittest.TestCase):
             timeout=browser_capture.WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS,
         )
 
-    @patch('aws_google_auth.browser_capture.time.sleep', spec=True)
-    @patch('aws_google_auth.browser_capture.os.killpg', spec=True)
+    @patch("aws_google_auth.browser_capture.time.sleep", spec=True)
+    @patch("aws_google_auth.browser_capture.os.killpg", spec=True)
     def test_firefox_webdriver_finally_kills_group_after_parent_exits(
         self,
         mock_killpg,
@@ -325,12 +323,14 @@ class TestBrowserCapture(unittest.TestCase):
                 "111111111111": "example-prod",
                 "222222222222": "example-dev",
             },
-            browser_capture.account_aliases_from_browser_roles([
-                {"accountName": "example-prod", "accountId": "111111111111", "roleName": "Admin"},
-                {"accountName": "example-dev", "accountId": "222222222222", "roleName": "PowerUser"},
-                {"accountName": "bad", "accountId": "not-an-id", "roleName": "ignored"},
-                "ignored",
-            ]),
+            browser_capture.account_aliases_from_browser_roles(
+                [
+                    {"accountName": "example-prod", "accountId": "111111111111", "roleName": "Admin"},
+                    {"accountName": "example-dev", "accountId": "222222222222", "roleName": "PowerUser"},
+                    {"accountName": "bad", "accountId": "not-an-id", "roleName": "ignored"},
+                    "ignored",
+                ]
+            ),
         )
 
     def test_click_google_account_if_present_clicks_data_identifier(self):
@@ -364,36 +364,36 @@ class TestBrowserCapture(unittest.TestCase):
         self.assertTrue(driver.find_element_by_xpath.called)
         driver.click_element.assert_called_once_with("account-element")
 
-    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
-    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    @patch("aws_google_auth.browser_capture.FirefoxWebDriver")
+    @patch("aws_google_auth.browser_capture.build_firefox_capture_extension", spec=True)
     def test_capture_retries_account_click_only_while_on_account_chooser(
         self,
         mock_build_extension,
         mock_webdriver,
     ):
-        chooser_url = (
-            "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
-        )
+        chooser_url = "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
         driver = Mock()
-        current_url = PropertyMock(side_effect=[
-            chooser_url,
-            chooser_url,
-            chooser_url,
-            "https://accounts.google.com/v3/signin/challenge/pwd?continue=aws",
-            captured_url("YWJjZA=="),
-        ])
+        current_url = PropertyMock(
+            side_effect=[
+                chooser_url,
+                chooser_url,
+                chooser_url,
+                "https://accounts.google.com/v3/signin/challenge/pwd?continue=aws",
+                captured_url("YWJjZA=="),
+            ]
+        )
         type(driver).current_url = current_url
         mock_webdriver.return_value = driver
 
         clock_values = [index * 0.5 for index in range(11)]
         with (
             patch(
-                'aws_google_auth.browser_capture.time.monotonic',
+                "aws_google_auth.browser_capture.time.monotonic",
                 side_effect=clock_values,
             ),
-            patch('aws_google_auth.browser_capture.time.sleep', spec=True),
+            patch("aws_google_auth.browser_capture.time.sleep", spec=True),
             patch(
-                'aws_google_auth.browser_capture.click_google_account_if_present',
+                "aws_google_auth.browser_capture.click_google_account_if_present",
                 return_value=True,
             ) as mock_click_google_account,
         ):
@@ -413,37 +413,37 @@ class TestBrowserCapture(unittest.TestCase):
         )
         self.assertEqual(5, current_url.call_count)
 
-    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
-    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    @patch("aws_google_auth.browser_capture.FirefoxWebDriver")
+    @patch("aws_google_auth.browser_capture.build_firefox_capture_extension", spec=True)
     def test_capture_reloads_a_stalled_account_chooser(
         self,
         mock_build_extension,
         mock_webdriver,
     ):
         login_url = "https://accounts.google.com/o/saml2/initsso"
-        chooser_url = (
-            "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
-        )
+        chooser_url = "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
         driver = Mock()
-        current_url = PropertyMock(side_effect=[
-            chooser_url,
-            captured_url("YWJjZA=="),
-        ])
+        current_url = PropertyMock(
+            side_effect=[
+                chooser_url,
+                captured_url("YWJjZA=="),
+            ]
+        )
         type(driver).current_url = current_url
         mock_webdriver.return_value = driver
 
         with (
             patch(
-                'aws_google_auth.browser_capture.GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS',
+                "aws_google_auth.browser_capture.GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS",
                 0,
             ),
             patch(
-                'aws_google_auth.browser_capture.time.monotonic',
+                "aws_google_auth.browser_capture.time.monotonic",
                 return_value=0,
             ),
-            patch('aws_google_auth.browser_capture.time.sleep', spec=True),
+            patch("aws_google_auth.browser_capture.time.sleep", spec=True),
             patch(
-                'aws_google_auth.browser_capture.click_google_account_if_present',
+                "aws_google_auth.browser_capture.click_google_account_if_present",
                 return_value=True,
             ),
         ):
@@ -459,37 +459,37 @@ class TestBrowserCapture(unittest.TestCase):
             driver.get.mock_calls,
         )
 
-    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
-    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    @patch("aws_google_auth.browser_capture.FirefoxWebDriver")
+    @patch("aws_google_auth.browser_capture.build_firefox_capture_extension", spec=True)
     def test_capture_stops_after_stalled_account_chooser_retry_limit(
         self,
         mock_build_extension,
         mock_webdriver,
     ):
         login_url = "https://accounts.google.com/o/saml2/initsso"
-        chooser_url = (
-            "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
-        )
+        chooser_url = "https://accounts.google.com/v3/signin/accountchooser?continue=aws"
         driver = Mock()
-        type(driver).current_url = PropertyMock(side_effect=[
-            chooser_url,
-            chooser_url,
-            chooser_url,
-        ])
+        type(driver).current_url = PropertyMock(
+            side_effect=[
+                chooser_url,
+                chooser_url,
+                chooser_url,
+            ]
+        )
         mock_webdriver.return_value = driver
 
         with (
             patch(
-                'aws_google_auth.browser_capture.GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS',
+                "aws_google_auth.browser_capture.GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS",
                 0,
             ),
             patch(
-                'aws_google_auth.browser_capture.time.monotonic',
+                "aws_google_auth.browser_capture.time.monotonic",
                 return_value=0,
             ),
-            patch('aws_google_auth.browser_capture.time.sleep', spec=True),
+            patch("aws_google_auth.browser_capture.time.sleep", spec=True),
             patch(
-                'aws_google_auth.browser_capture.click_google_account_if_present',
+                "aws_google_auth.browser_capture.click_google_account_if_present",
                 return_value=True,
             ),
             self.assertRaisesRegex(RuntimeError, "did not advance"),
@@ -507,9 +507,14 @@ class TestBrowserCapture(unittest.TestCase):
         driver.quit.assert_called_once_with()
 
     def test_captured_result_from_url_reads_the_capture_page_fragment(self):
-        result = browser_capture.captured_result_from_url(captured_url("YWJjZA==", [
-            {"accountName": "example-prod", "accountId": "111111111111", "roleName": "Admin"},
-        ]))
+        result = browser_capture.captured_result_from_url(
+            captured_url(
+                "YWJjZA==",
+                [
+                    {"accountName": "example-prod", "accountId": "111111111111", "roleName": "Admin"},
+                ],
+            )
+        )
 
         self.assertEqual("YWJjZA==", result.saml_response)
         self.assertEqual({"111111111111": "example-prod"}, result.account_aliases)
@@ -526,8 +531,8 @@ class TestBrowserCapture(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertIsNone(browser_capture.captured_result_from_url(url))
 
-    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
-    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    @patch("aws_google_auth.browser_capture.FirefoxWebDriver")
+    @patch("aws_google_auth.browser_capture.build_firefox_capture_extension", spec=True)
     def test_capture_progress_does_not_print_the_saml_response(
         self,
         mock_build_extension,
@@ -538,7 +543,7 @@ class TestBrowserCapture(unittest.TestCase):
         driver.title.side_effect = browser_capture.WebDriverError("privileged scope")
         mock_webdriver.return_value = driver
 
-        with patch('builtins.print') as mock_print:
+        with patch("builtins.print") as mock_print:
             result = browser_capture.capture_saml_response_with_firefox(
                 "https://accounts.google.com/o/saml2/initsso",
                 timeout_seconds=120,
@@ -549,7 +554,7 @@ class TestBrowserCapture(unittest.TestCase):
         self.assertIn("moz-extension://capture/captured.html", printed)
         self.assertNotIn("c2VjcmV0LWFzc2VydGlvbg", printed)
 
-    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
+    @patch("aws_google_auth.browser_capture.FirefoxWebDriver")
     def test_capture_quits_firefox_before_removing_its_temporary_profile(
         self,
         mock_webdriver,
@@ -560,9 +565,7 @@ class TestBrowserCapture(unittest.TestCase):
         extension_paths = []
         profile_existed_at_quit = []
         driver.install_addon.side_effect = extension_paths.append
-        driver.quit.side_effect = lambda: profile_existed_at_quit.append(
-            extension_paths[0].parent.exists()
-        )
+        driver.quit.side_effect = lambda: profile_existed_at_quit.append(extension_paths[0].parent.exists())
 
         browser_capture.capture_saml_response_with_firefox(
             "https://accounts.google.com/o/saml2/initsso",
@@ -572,8 +575,8 @@ class TestBrowserCapture(unittest.TestCase):
         self.assertEqual([True], profile_existed_at_quit)
         self.assertFalse(extension_paths[0].parent.exists())
 
-    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
-    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    @patch("aws_google_auth.browser_capture.FirefoxWebDriver")
+    @patch("aws_google_auth.browser_capture.build_firefox_capture_extension", spec=True)
     def test_capture_marks_its_temporary_directory_with_owner(
         self,
         mock_build_extension,
@@ -595,8 +598,8 @@ class TestBrowserCapture(unittest.TestCase):
         self.assertEqual([str(browser_capture.os.getpid())], owners)
 
     @unittest.skipUnless(hasattr(signal, "SIGHUP"), "requires POSIX signals")
-    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
-    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    @patch("aws_google_auth.browser_capture.FirefoxWebDriver")
+    @patch("aws_google_auth.browser_capture.build_firefox_capture_extension", spec=True)
     def test_capture_cleans_up_when_terminal_is_closed(
         self,
         mock_build_extension,
@@ -633,7 +636,7 @@ class TestBrowserCapture(unittest.TestCase):
         return path
 
     @unittest.skipUnless(browser_capture.os.name == "posix", "owner check is POSIX only")
-    @patch('aws_google_auth.browser_capture.process_is_running', spec=True)
+    @patch("aws_google_auth.browser_capture.process_is_running", spec=True)
     def test_orphaned_capture_directories_are_removed(self, mock_is_running):
         live_process_id = 1234
         mock_is_running.side_effect = lambda process_id: process_id == live_process_id
@@ -743,17 +746,20 @@ class TestBrowserCapture(unittest.TestCase):
                 (target / "user.js").read_text(encoding="utf-8"),
             )
 
-    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
-    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    @patch("aws_google_auth.browser_capture.FirefoxWebDriver")
+    @patch("aws_google_auth.browser_capture.build_firefox_capture_extension", spec=True)
     def test_capture_saml_response_uses_firefox_profile_and_timeout(
         self,
         mock_build_extension,
         mock_webdriver,
     ):
         driver = Mock()
-        driver.current_url = captured_url("YWJjZA==", [
-            {"accountName": "example-prod", "accountId": "111111111111", "roleName": "Admin"},
-        ])
+        driver.current_url = captured_url(
+            "YWJjZA==",
+            [
+                {"accountName": "example-prod", "accountId": "111111111111", "roleName": "Admin"},
+            ],
+        )
         mock_webdriver.return_value = driver
 
         with tempfile.TemporaryDirectory() as temp_dir:

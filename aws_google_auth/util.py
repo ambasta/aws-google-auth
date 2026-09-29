@@ -7,7 +7,6 @@ from tabulate import tabulate
 
 
 class Util:
-
     @staticmethod
     def get_input(prompt):
         return input(prompt).strip()
@@ -28,12 +27,8 @@ class Util:
         if aliases:
             enriched_roles = {}
             for role, principal in filtered_roles.items():
-                account_id = role.split(':')[4]
-                enriched_roles[role] = [
-                    aliases.get(account_id, account_id),
-                    role.split('role/')[1],
-                    principal
-                ]
+                account_id = role.split(":")[4]
+                enriched_roles[role] = [aliases.get(account_id, account_id), role.split("role/")[1], principal]
             enriched_roles = OrderedDict(sorted(enriched_roles.items(), key=lambda t: (t[1][0], t[1][1])))
 
             ordered_roles = OrderedDict()
@@ -45,25 +40,30 @@ class Util:
                 enriched_roles_tab.append([i + 1, role_property[0], role_property[1]])
 
             while True:
-                print(tabulate(enriched_roles_tab, headers=['No', 'AWS account', 'Role'], ))
-                prompt = 'Type the number (1 - {:d}) of the role to assume: '.format(len(enriched_roles))
+                print(
+                    tabulate(
+                        enriched_roles_tab,
+                        headers=["No", "AWS account", "Role"],
+                    )
+                )
+                prompt = "Type the number (1 - {:d}) of the role to assume: ".format(len(enriched_roles))
                 choice = Util.get_input(prompt)
 
                 try:
                     return list(ordered_roles.items())[int(choice) - 1]
-                except (IndexError, ValueError):
+                except IndexError, ValueError:
                     print("Invalid choice, try again.")
         else:
             while True:
                 for i, role in enumerate(filtered_roles):
                     print("[{:>3d}] {}".format(i + 1, role))
 
-                prompt = 'Type the number (1 - {:d}) of the role to assume: '.format(len(filtered_roles))
+                prompt = "Type the number (1 - {:d}) of the role to assume: ".format(len(filtered_roles))
                 choice = Util.get_input(prompt)
 
                 try:
                     return list(filtered_roles.items())[int(choice) - 1]
-                except (IndexError, ValueError):
+                except IndexError, ValueError:
                     print("Invalid choice, try again.")
 
     @staticmethod

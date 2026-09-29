@@ -15,7 +15,6 @@ from aws_google_auth.google import ExpectedGoogleException
 
 
 class Amazon:
-
     def __init__(self, config, saml_xml):
         self.config = config
         self.saml_xml = saml_xml
@@ -24,12 +23,12 @@ class Amazon:
     @property
     def sts_client(self):
         try:
-            profile = os.environ.get('AWS_PROFILE')
+            profile = os.environ.get("AWS_PROFILE")
             if profile is not None:
-                del os.environ['AWS_PROFILE']
-            client = boto3.client('sts', region_name=self.config.region)
+                del os.environ["AWS_PROFILE"]
+            client = boto3.client("sts", region_name=self.config.region)
             if profile is not None:
-                os.environ['AWS_PROFILE'] = profile
+                os.environ["AWS_PROFILE"] = profile
             return client
         except ProfileNotFound as ex:
             raise ExpectedGoogleException("Error : {}.".format(ex))
@@ -41,27 +40,26 @@ class Amazon:
     @property
     def token(self):
         if self.__token is None:
-            self.__token = self.assume_role(self.config.role_arn,
-                                            self.config.provider,
-                                            self.base64_encoded_saml,
-                                            self.config.duration)
+            self.__token = self.assume_role(
+                self.config.role_arn, self.config.provider, self.base64_encoded_saml, self.config.duration
+            )
         return self.__token
 
     @property
     def access_key_id(self):
-        return self.token['Credentials']['AccessKeyId']
+        return self.token["Credentials"]["AccessKeyId"]
 
     @property
     def secret_access_key(self):
-        return self.token['Credentials']['SecretAccessKey']
+        return self.token["Credentials"]["SecretAccessKey"]
 
     @property
     def session_token(self):
-        return self.token['Credentials']['SessionToken']
+        return self.token["Credentials"]["SessionToken"]
 
     @property
     def expiration(self):
-        return self.token['Credentials']['Expiration']
+        return self.token["Credentials"]["Expiration"]
 
     def print_export_line(self):
         export_template = "export AWS_ACCESS_KEY_ID='{}' AWS_SECRET_ACCESS_KEY='{}' AWS_SESSION_TOKEN='{}' AWS_SESSION_EXPIRATION='{}'"
@@ -70,7 +68,8 @@ class Amazon:
             self.access_key_id,
             self.secret_access_key,
             self.session_token,
-            self.expiration.strftime('%Y-%m-%dT%H:%M:%S%z'))
+            self.expiration.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        )
 
         print(formatted)
 
@@ -80,39 +79,35 @@ class Amazon:
         roles = {}
         for x in doc.xpath('//*[@Name = "https://aws.amazon.com/SAML/Attributes/Role"]//text()'):
             if "arn:aws:iam:" in x or "arn:aws-us-gov:iam:" in x:
-                res = x.split(',')
+                res = x.split(",")
                 roles[res[0]] = res[1]
         return roles
 
     def assume_role(self, role, principal, saml_assertion, duration=None, auto_duration=True):
-        sts_call_vars = {
-            'RoleArn': role,
-            'PrincipalArn': principal,
-            'SAMLAssertion': saml_assertion
-        }
+        sts_call_vars = {"RoleArn": role, "PrincipalArn": principal, "SAMLAssertion": saml_assertion}
 
         # Try the maximum duration of 12 hours, if it fails try to use the
         # maximum duration indicated by the error
         if self.config.auto_duration and auto_duration:
-            sts_call_vars['DurationSeconds'] = self.config.max_duration
+            sts_call_vars["DurationSeconds"] = self.config.max_duration
             try:
                 res = self.sts_client.assume_role_with_saml(**sts_call_vars)
             except ClientError as err:
-                if (err.response.get('Error', []).get('Code') == 'ValidationError' and err.response.get('Error', []).get('Message')):
+                if err.response.get("Error", []).get("Code") == "ValidationError" and err.response.get("Error", []).get(
+                    "Message"
+                ):
                     m = re.search(
-                        'Member must have value less than or equal to ([0-9]{3,5})',
-                        err.response['Error']['Message']
+                        "Member must have value less than or equal to ([0-9]{3,5})", err.response["Error"]["Message"]
                     )
                     if m is not None and m.group(1):
                         new_duration = int(m.group(1))
-                        return self.assume_role(role, principal,
-                                                saml_assertion,
-                                                duration=new_duration,
-                                                auto_duration=False)
+                        return self.assume_role(
+                            role, principal, saml_assertion, duration=new_duration, auto_duration=False
+                        )
                 # Unknown error or no max time returned in error message
                 raise
         elif duration:
-            sts_call_vars['DurationSeconds'] = duration
+            sts_call_vars["DurationSeconds"] = duration
 
         res = self.sts_client.assume_role_with_saml(**sts_call_vars)
 
@@ -122,27 +117,31 @@ class Amazon:
         def resolve_aws_alias(role, principal, aws_dict):
             session = boto3.session.Session(region_name=self.config.region)
 
-            sts = session.client('sts')
-            saml = sts.assume_role_with_saml(RoleArn=role,
-                                             PrincipalArn=principal,
-                                             SAMLAssertion=self.base64_encoded_saml)
+            sts = session.client("sts")
+            saml = sts.assume_role_with_saml(
+                RoleArn=role, PrincipalArn=principal, SAMLAssertion=self.base64_encoded_saml
+            )
 
-            iam = session.client('iam',
-                                 aws_access_key_id=saml['Credentials']['AccessKeyId'],
-                                 aws_secret_access_key=saml['Credentials']['SecretAccessKey'],
-                                 aws_session_token=saml['Credentials']['SessionToken'])
+            iam = session.client(
+                "iam",
+                aws_access_key_id=saml["Credentials"]["AccessKeyId"],
+                aws_secret_access_key=saml["Credentials"]["SecretAccessKey"],
+                aws_session_token=saml["Credentials"]["SessionToken"],
+            )
             try:
                 response = iam.list_account_aliases()
-                account_alias = response['AccountAliases'][0]
-                aws_dict[role.split(':')[4]] = account_alias
+                account_alias = response["AccountAliases"][0]
+                aws_dict[role.split(":")[4]] = account_alias
             except:
-                sts = session.client('sts',
-                                     aws_access_key_id=saml['Credentials']['AccessKeyId'],
-                                     aws_secret_access_key=saml['Credentials']['SecretAccessKey'],
-                                     aws_session_token=saml['Credentials']['SessionToken'])
+                sts = session.client(
+                    "sts",
+                    aws_access_key_id=saml["Credentials"]["AccessKeyId"],
+                    aws_secret_access_key=saml["Credentials"]["SecretAccessKey"],
+                    aws_session_token=saml["Credentials"]["SessionToken"],
+                )
 
-                account_id = sts.get_caller_identity().get('Account')
-                aws_dict[role.split(':')[4]] = '{}'.format(account_id)
+                account_id = sts.get_caller_identity().get("Account")
+                aws_dict[role.split(":")[4]] = "{}".format(account_id)
 
         threads = []
         aws_id_alias = {}
@@ -163,9 +162,9 @@ class Amazon:
 
         try:
             doc = etree.fromstring(saml_xml)
-            conditions = list(doc.iter(tag='{urn:oasis:names:tc:SAML:2.0:assertion}Conditions'))
-            not_before_str = conditions[0].get('NotBefore')
-            not_on_or_after_str = conditions[0].get('NotOnOrAfter')
+            conditions = list(doc.iter(tag="{urn:oasis:names:tc:SAML:2.0:assertion}Conditions"))
+            not_before_str = conditions[0].get("NotBefore")
+            not_on_or_after_str = conditions[0].get("NotOnOrAfter")
 
             now = datetime.now(UTC)
             not_before = datetime.strptime(not_before_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)

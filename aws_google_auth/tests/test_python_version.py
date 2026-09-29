@@ -6,10 +6,9 @@ from unittest import mock
 
 
 class TestPythonFailOnVersion(unittest.TestCase):
-
     def test_python313(self):
 
-        with mock.patch.object(sys, 'version_info') as v_info:
+        with mock.patch.object(sys, "version_info") as v_info:
             v_info.__lt__.return_value = True
 
             with self.assertRaises(SystemExit) as cm:
@@ -18,7 +17,7 @@ class TestPythonFailOnVersion(unittest.TestCase):
             self.assertEqual(cm.exception.code, 1)
 
     def test_python314(self):
-        with mock.patch.object(sys, 'version_info') as v_info:
+        with mock.patch.object(sys, "version_info") as v_info:
             v_info.__lt__.return_value = False
 
             try:

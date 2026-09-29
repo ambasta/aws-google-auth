@@ -9,7 +9,6 @@ from aws_google_auth import configuration
 
 
 class TestConfigurationPersistence(unittest.TestCase):
-
     def setUp(self):
         self.c = configuration.Configuration()
 
@@ -36,7 +35,7 @@ class TestConfigurationPersistence(unittest.TestCase):
     def tearDown(self):
         section_name = configuration.Configuration.config_profile(self.c.profile)
         self.config_parser.remove_section(section_name)
-        with open(self.c.config_file, 'w') as config_file:
+        with open(self.c.config_file, "w") as config_file:
             self.config_parser.write(config_file)
 
     def test_configuration_backwards_compatibility(self):
@@ -45,11 +44,13 @@ class TestConfigurationPersistence(unittest.TestCase):
         self.config_parser.read(self.c.config_file)
         profile_string = configuration.Configuration.config_profile(self.c.profile)
         self.assertTrue(self.config_parser.has_section(profile_string))
-        self.assertEqual(self.config_parser[profile_string].get('google_config.google_idp_id'), self.c.idp_id)
-        self.assertEqual(self.config_parser[profile_string].get('google_config.role_arn'), self.c.role_arn)
-        self.assertEqual(self.config_parser[profile_string].get('google_config.google_sp_id'), self.c.sp_id)
-        self.assertEqual(self.config_parser[profile_string].get('google_config.google_username'), self.c.username)
-        self.assertEqual(self.config_parser[profile_string].get('region'), self.c.region)
-        self.assertEqual(self.config_parser[profile_string].getboolean('google_config.ask_role'), self.c.ask_role)
-        self.assertEqual(self.config_parser[profile_string].getboolean('google_config.u2f_disabled'), self.c.u2f_disabled)
-        self.assertEqual(self.config_parser[profile_string].getint('google_config.duration'), self.c.duration)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.google_idp_id"), self.c.idp_id)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.role_arn"), self.c.role_arn)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.google_sp_id"), self.c.sp_id)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.google_username"), self.c.username)
+        self.assertEqual(self.config_parser[profile_string].get("region"), self.c.region)
+        self.assertEqual(self.config_parser[profile_string].getboolean("google_config.ask_role"), self.c.ask_role)
+        self.assertEqual(
+            self.config_parser[profile_string].getboolean("google_config.u2f_disabled"), self.c.u2f_disabled
+        )
+        self.assertEqual(self.config_parser[profile_string].getint("google_config.duration"), self.c.duration)

@@ -15,12 +15,12 @@ from aws_google_auth import google
 class TestGoogle(unittest.TestCase):
     def read_local_file(self, filename):
         here = path.abspath(path.dirname(__file__))
-        with open(path.join(here, filename), encoding='utf-8') as fp:
-            return fp.read().encode('utf-8')
+        with open(path.join(here, filename), encoding="utf-8") as fp:
+            return fp.read().encode("utf-8")
 
     def test_extra_step(self):
-        response = self.read_local_file('google_error.html')
-        response = BeautifulSoup(response, 'html.parser')
+        response = self.read_local_file("google_error.html")
+        response = BeautifulSoup(response, "html.parser")
         with self.assertRaises(ValueError):
             google.Google.check_extra_step(response)
 
@@ -39,7 +39,9 @@ class TestGoogle(unittest.TestCase):
 """
         keyHandleJsonPayload = json.loads(keyHandleJSText)
 
-        keyHandles = google.Google.find_key_handles(keyHandleJsonPayload, base64.urlsafe_b64encode(base64.b64decode(challenges_txt)))
+        keyHandles = google.Google.find_key_handles(
+            keyHandleJsonPayload, base64.urlsafe_b64encode(base64.b64decode(challenges_txt))
+        )
         self.assertEqual(
             [
                 b"S0VZSEFORExFMQ==",
@@ -77,9 +79,11 @@ class TestGoogle(unittest.TestCase):
         with self.assertRaises(google.ExpectedGoogleException) as ex:
             undertest.parse_saml()
 
-        self.assertEqual("Something went wrong - Could not find SAML response, check your credentials "
-                         "or use --save-failure-html to debug.",
-                         str(ex.exception))
+        self.assertEqual(
+            "Something went wrong - Could not find SAML response, check your credentials "
+            "or use --save-failure-html to debug.",
+            str(ex.exception),
+        )
 
     def test_do_login_with_unexpected_google_page_raises_expected_exception(self):
         mock_config = Mock()
@@ -90,9 +94,7 @@ class TestGoogle(unittest.TestCase):
 
         undertest = google.Google(config=mock_config, save_failure=False)
         undertest.get = Mock()
-        undertest.get.return_value = Mock(
-            text="<html><head><title>Bad Request</title></head><body></body></html>"
-        )
+        undertest.get.return_value = Mock(text="<html><head><title>Bad Request</title></head><body></body></html>")
 
         with self.assertRaises(google.ExpectedGoogleException) as ex:
             undertest.do_login()
@@ -172,6 +174,8 @@ class TestGoogle(unittest.TestCase):
         with self.assertRaises(google.ExpectedGoogleException) as ex:
             undertest.parse_saml()
 
-        self.assertEqual("Something went wrong - Could not find SAML response, check your credentials "
-                         "or use --save-failure-html to debug.",
-                         str(ex.exception))
+        self.assertEqual(
+            "Something went wrong - Could not find SAML response, check your credentials "
+            "or use --save-failure-html to debug.",
+            str(ex.exception),
+        )

@@ -9,7 +9,6 @@ from aws_google_auth import configuration
 
 
 class TestConfigurationPersistence(unittest.TestCase):
-
     def setUp(self):
         self.c = configuration.Configuration()
 
@@ -42,23 +41,27 @@ class TestConfigurationPersistence(unittest.TestCase):
     def tearDown(self):
         section_name = configuration.Configuration.config_profile(self.c.profile)
         self.config_parser.remove_section(section_name)
-        with open(self.c.config_file, 'w') as config_file:
+        with open(self.c.config_file, "w") as config_file:
             self.config_parser.write(config_file)
 
     def test_creating_new_profile(self):
         profile_string = configuration.Configuration.config_profile(self.c.profile)
         self.assertTrue(self.config_parser.has_section(profile_string))
-        self.assertEqual(self.config_parser[profile_string].get('google_config.google_idp_id'), self.c.idp_id)
-        self.assertEqual(self.config_parser[profile_string].get('google_config.role_arn'), self.c.role_arn)
-        self.assertEqual(self.config_parser[profile_string].get('google_config.google_sp_id'), self.c.sp_id)
-        self.assertEqual(self.config_parser[profile_string].get('google_config.google_username'), self.c.username)
-        self.assertEqual(self.config_parser[profile_string].get('region'), self.c.region)
-        self.assertEqual(self.config_parser[profile_string].getboolean('google_config.ask_role'), self.c.ask_role)
-        self.assertEqual(self.config_parser[profile_string].getboolean('google_config.keyring'), self.c.keyring)
-        self.assertEqual(self.config_parser[profile_string].getboolean('google_config.u2f_disabled'), self.c.u2f_disabled)
-        self.assertEqual(self.config_parser[profile_string].getint('google_config.duration'), self.c.duration)
-        self.assertEqual(self.config_parser[profile_string].get('google_config.bg_response'), self.c.bg_response)
-        self.assertEqual(self.config_parser[profile_string].get('google_config.firefox_profile'), self.c.firefox_profile)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.google_idp_id"), self.c.idp_id)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.role_arn"), self.c.role_arn)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.google_sp_id"), self.c.sp_id)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.google_username"), self.c.username)
+        self.assertEqual(self.config_parser[profile_string].get("region"), self.c.region)
+        self.assertEqual(self.config_parser[profile_string].getboolean("google_config.ask_role"), self.c.ask_role)
+        self.assertEqual(self.config_parser[profile_string].getboolean("google_config.keyring"), self.c.keyring)
+        self.assertEqual(
+            self.config_parser[profile_string].getboolean("google_config.u2f_disabled"), self.c.u2f_disabled
+        )
+        self.assertEqual(self.config_parser[profile_string].getint("google_config.duration"), self.c.duration)
+        self.assertEqual(self.config_parser[profile_string].get("google_config.bg_response"), self.c.bg_response)
+        self.assertEqual(
+            self.config_parser[profile_string].get("google_config.firefox_profile"), self.c.firefox_profile
+        )
 
     def test_unset_firefox_profile_is_removed(self):
         self.c.firefox_profile = None
@@ -67,15 +70,15 @@ class TestConfigurationPersistence(unittest.TestCase):
         config_parser = configparser.RawConfigParser()
         config_parser.read(self.c.config_file)
         profile_string = configuration.Configuration.config_profile(self.c.profile)
-        self.assertFalse(config_parser.has_option(profile_string, 'google_config.firefox_profile'))
+        self.assertFalse(config_parser.has_option(profile_string, "google_config.firefox_profile"))
 
     def test_password_not_written(self):
         profile_string = configuration.Configuration.config_profile(self.c.profile)
-        self.assertIsNone(self.config_parser[profile_string].get('google_config.password', None))
-        self.assertIsNone(self.config_parser[profile_string].get('password', None))
+        self.assertIsNone(self.config_parser[profile_string].get("google_config.password", None))
+        self.assertIsNone(self.config_parser[profile_string].get("password", None))
 
         # Check for password leakage (It didn't get written in an odd way)
-        with open(self.c.config_file, 'r') as config_file:
+        with open(self.c.config_file, "r") as config_file:
             for line in config_file:
                 self.assertFalse(self.c.password in line)
 

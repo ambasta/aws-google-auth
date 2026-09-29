@@ -8,7 +8,6 @@ from aws_google_auth import util
 
 
 class TestUtilMethods(unittest.TestCase):
-
     def test_coalesce_no_arguments(self):
         self.assertEqual(util.Util.coalesce(), None)
 
@@ -27,7 +26,9 @@ class TestUtilMethods(unittest.TestCase):
     def test_coalesce_many_arguments(self):
         self.assertEqual(util.Util.coalesce(None, "test-01", None, "test-02", None, "test-03"), "test-01")
         self.assertEqual(util.Util.coalesce("test-01", None, "test-02", None, "test-03", None), "test-01")
-        self.assertEqual(util.Util.coalesce(None, None, None, None, None, None, None, None, None, None, "test-01"), "test-01")
+        self.assertEqual(
+            util.Util.coalesce(None, None, None, None, None, None, None, None, None, None, "test-01"), "test-01"
+        )
 
     def test_unicode_to_string_if_needed_python_3(self):
         value_string = "Test String!"
@@ -39,7 +40,7 @@ class TestUtilMethods(unittest.TestCase):
         self.assertEqual(util.Util.unicode_to_string_if_needed(1234), 1234)
         self.assertEqual(util.Util.unicode_to_string_if_needed("nop"), "nop")
 
-    @patch('builtins.input', spec=True)
+    @patch("builtins.input", spec=True)
     def test_get_input_strips_whitespace(self, mock_input):
         mock_input.return_value = " C01abc234 "
 
@@ -50,8 +51,8 @@ class TestUtilMethods(unittest.TestCase):
         self.assertEqual(util.Util.strip_if_string(None), None)
         self.assertEqual(util.Util.strip_if_string(1234), 1234)
 
-    @patch('getpass.getpass', spec=True)
-    @patch('sys.stdin', spec=True)
+    @patch("getpass.getpass", spec=True)
+    @patch("sys.stdin", spec=True)
     def test_get_password_when_tty(self, mock_stdin, mock_getpass):
         mock_stdin.isatty = MagicMock(return_value=True)
 
@@ -59,7 +60,7 @@ class TestUtilMethods(unittest.TestCase):
 
         self.assertEqual(util.Util.get_password("Test: "), "pass")
 
-    @patch('sys.stdin', spec=True)
+    @patch("sys.stdin", spec=True)
     def test_get_password_when_not_tty(self, mock_stdin):
         mock_stdin.isatty = MagicMock(return_value=False)
         mock_stdin.readline = MagicMock(return_value="pass")

@@ -6,7 +6,6 @@ from aws_google_auth import parse_args
 
 
 class TestPythonFailOnVersion(unittest.TestCase):
-
     def test_no_arguments(self):
         """
         This test case exists to validate the default settings of the args parser.
@@ -29,7 +28,7 @@ class TestPythonFailOnVersion(unittest.TestCase):
         self.assertEqual(parser.browser_timeout, 600)
         self.assertEqual(parser.firefox_executable, None)
         self.assertEqual(parser.firefox_profile, None)
-        self.assertEqual(parser.geckodriver_executable, 'geckodriver')
+        self.assertEqual(parser.geckodriver_executable, "geckodriver")
         self.assertEqual(parser.auto_duration, False)
         self.assertEqual(parser.idp_id, None)
         self.assertEqual(parser.sp_id, None)
@@ -49,32 +48,38 @@ class TestPythonFailOnVersion(unittest.TestCase):
         self.assertEqual(len(vars(parser)), 27)
 
     def test_browser(self):
-        parser = parse_args(['--browser'])
+        parser = parse_args(["--browser"])
 
         self.assertTrue(parser.browser)
 
     def test_browser_capture(self):
-        parser = parse_args([
-            '--browser-capture',
-            '--browser-timeout', '120',
-            '--firefox-executable', '/usr/bin/firefox',
-            '--firefox-profile', '/home/me/.mozilla/firefox/default',
-            '--geckodriver-executable', '/usr/bin/geckodriver',
-        ])
+        parser = parse_args(
+            [
+                "--browser-capture",
+                "--browser-timeout",
+                "120",
+                "--firefox-executable",
+                "/usr/bin/firefox",
+                "--firefox-profile",
+                "/home/me/.mozilla/firefox/default",
+                "--geckodriver-executable",
+                "/usr/bin/geckodriver",
+            ]
+        )
 
         self.assertTrue(parser.browser_capture)
         self.assertEqual(parser.browser_timeout, 120)
-        self.assertEqual(parser.firefox_executable, '/usr/bin/firefox')
-        self.assertEqual(parser.firefox_profile, '/home/me/.mozilla/firefox/default')
-        self.assertEqual(parser.geckodriver_executable, '/usr/bin/geckodriver')
+        self.assertEqual(parser.firefox_executable, "/usr/bin/firefox")
+        self.assertEqual(parser.firefox_profile, "/home/me/.mozilla/firefox/default")
+        self.assertEqual(parser.geckodriver_executable, "/usr/bin/geckodriver")
 
     def test_browser_modes_are_mutually_exclusive(self):
         with self.assertRaises(SystemExit):
-            parse_args(['--browser', '--browser-capture'])
+            parse_args(["--browser", "--browser-capture"])
 
     def test_username(self):
 
-        parser = parse_args(['-u', 'username@gmail.com'])
+        parser = parse_args(["-u", "username@gmail.com"])
 
         self.assertTrue(parser.saml_cache)
         self.assertFalse(parser.ask_role)
@@ -86,12 +91,12 @@ class TestPythonFailOnVersion(unittest.TestCase):
         self.assertEqual(parser.profile, None)
         self.assertEqual(parser.region, None)
         self.assertEqual(parser.role_arn, None)
-        self.assertEqual(parser.username, 'username@gmail.com')
+        self.assertEqual(parser.username, "username@gmail.com")
         self.assertEqual(parser.account, None)
 
     def test_nocache(self):
 
-        parser = parse_args(['--no-cache'])
+        parser = parse_args(["--no-cache"])
 
         self.assertFalse(parser.saml_cache)
         self.assertFalse(parser.ask_role)
@@ -108,7 +113,7 @@ class TestPythonFailOnVersion(unittest.TestCase):
 
     def test_resolvealiases(self):
 
-        parser = parse_args(['--resolve-aliases'])
+        parser = parse_args(["--resolve-aliases"])
 
         self.assertTrue(parser.saml_cache)
         self.assertFalse(parser.ask_role)
@@ -126,7 +131,7 @@ class TestPythonFailOnVersion(unittest.TestCase):
     def test_ask_and_supply_role(self):
 
         with self.assertRaises(SystemExit):
-            parse_args(['-a', '-r', 'da-role'])
+            parse_args(["-a", "-r", "da-role"])
 
     def test_invalid_duration(self):
         """
@@ -135,4 +140,4 @@ class TestPythonFailOnVersion(unittest.TestCase):
         """
 
         with self.assertRaises(SystemExit):
-            parse_args(['-d', 'abce'])
+            parse_args(["-d", "abce"])

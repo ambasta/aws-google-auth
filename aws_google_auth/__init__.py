@@ -25,40 +25,74 @@ def parse_args(args):
         description="Acquire temporary AWS credentials via Google SSO",
     )
 
-    parser.add_argument('-u', '--username', help='Google Apps username ($GOOGLE_USERNAME)')
-    parser.add_argument('-I', '--idp-id', help='Google SSO IDP identifier ($GOOGLE_IDP_ID)')
-    parser.add_argument('-S', '--sp-id', help='Google SSO SP identifier ($GOOGLE_SP_ID)')
-    parser.add_argument('-R', '--region', help='AWS region endpoint ($AWS_DEFAULT_REGION)')
+    parser.add_argument("-u", "--username", help="Google Apps username ($GOOGLE_USERNAME)")
+    parser.add_argument("-I", "--idp-id", help="Google SSO IDP identifier ($GOOGLE_IDP_ID)")
+    parser.add_argument("-S", "--sp-id", help="Google SSO SP identifier ($GOOGLE_SP_ID)")
+    parser.add_argument("-R", "--region", help="AWS region endpoint ($AWS_DEFAULT_REGION)")
     duration_group = parser.add_mutually_exclusive_group()
-    duration_group.add_argument('-d', '--duration', type=int, help='Credential duration in seconds (defaults to value of $DURATION, then falls back to 43200)')
-    duration_group.add_argument('--auto-duration', action='store_true', help='Tries to use the longest allowed duration ($AUTO_DURATION)')
-    parser.add_argument('-p', '--profile', help='AWS profile (defaults to value of $AWS_PROFILE, then falls back to \'sts\')')
-    parser.add_argument('-A', '--account', help='Filter for specific AWS account.')
-    parser.add_argument('-D', '--disable-u2f', action='store_true', help='Disable U2F functionality.')
-    parser.add_argument('-q', '--quiet', action='store_true', help='Quiet output')
-    parser.add_argument('--bg-response', help='Override default bgresponse challenge token.')
-    parser.add_argument('--saml-assertion', dest="saml_assertion", help='Base64 encoded SAML assertion to use.')
+    duration_group.add_argument(
+        "-d",
+        "--duration",
+        type=int,
+        help="Credential duration in seconds (defaults to value of $DURATION, then falls back to 43200)",
+    )
+    duration_group.add_argument(
+        "--auto-duration", action="store_true", help="Tries to use the longest allowed duration ($AUTO_DURATION)"
+    )
+    parser.add_argument(
+        "-p", "--profile", help="AWS profile (defaults to value of $AWS_PROFILE, then falls back to 'sts')"
+    )
+    parser.add_argument("-A", "--account", help="Filter for specific AWS account.")
+    parser.add_argument("-D", "--disable-u2f", action="store_true", help="Disable U2F functionality.")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Quiet output")
+    parser.add_argument("--bg-response", help="Override default bgresponse challenge token.")
+    parser.add_argument("--saml-assertion", dest="saml_assertion", help="Base64 encoded SAML assertion to use.")
     browser_group = parser.add_mutually_exclusive_group()
-    browser_group.add_argument('--browser', action='store_true', help='Open Google SSO in a browser and prompt for a copied SAMLResponse.')
-    browser_group.add_argument('--browser-capture', action='store_true', help='Use Firefox to capture the browser SAMLResponse automatically.')
-    parser.add_argument('--browser-timeout', type=int, default=600, help='Seconds to wait for browser SAML capture.')
-    parser.add_argument('--firefox-executable', help='Path to a Firefox executable for --browser-capture (defaults to the Firefox on $PATH).')
-    parser.add_argument('--firefox-profile', help='Path to a Firefox profile directory to copy for --browser-capture (defaults to Firefox\'s default profile).')
-    parser.add_argument('--geckodriver-executable', default='geckodriver', help='Path to geckodriver for --browser-capture.')
-    parser.add_argument('--no-cache', dest="saml_cache", action='store_false', help='Do not cache the SAML Assertion.')
-    parser.add_argument('--print-creds', action='store_true', help='Print Credentials.')
-    parser.add_argument('--resolve-aliases', action='store_true', help='Resolve AWS account aliases.')
-    parser.add_argument('--save-failure-html', action='store_true', help='Write HTML failure responses to file for troubleshooting.')
-    parser.add_argument('--save-saml-flow', action='store_true', help='Write all GET and PUT requests and HTML responses to/from Google to files for troubleshooting.')
+    browser_group.add_argument(
+        "--browser", action="store_true", help="Open Google SSO in a browser and prompt for a copied SAMLResponse."
+    )
+    browser_group.add_argument(
+        "--browser-capture", action="store_true", help="Use Firefox to capture the browser SAMLResponse automatically."
+    )
+    parser.add_argument("--browser-timeout", type=int, default=600, help="Seconds to wait for browser SAML capture.")
+    parser.add_argument(
+        "--firefox-executable",
+        help="Path to a Firefox executable for --browser-capture (defaults to the Firefox on $PATH).",
+    )
+    parser.add_argument(
+        "--firefox-profile",
+        help="Path to a Firefox profile directory to copy for --browser-capture (defaults to Firefox's default profile).",
+    )
+    parser.add_argument(
+        "--geckodriver-executable", default="geckodriver", help="Path to geckodriver for --browser-capture."
+    )
+    parser.add_argument("--no-cache", dest="saml_cache", action="store_false", help="Do not cache the SAML Assertion.")
+    parser.add_argument("--print-creds", action="store_true", help="Print Credentials.")
+    parser.add_argument("--resolve-aliases", action="store_true", help="Resolve AWS account aliases.")
+    parser.add_argument(
+        "--save-failure-html", action="store_true", help="Write HTML failure responses to file for troubleshooting."
+    )
+    parser.add_argument(
+        "--save-saml-flow",
+        action="store_true",
+        help="Write all GET and PUT requests and HTML responses to/from Google to files for troubleshooting.",
+    )
 
     role_group = parser.add_mutually_exclusive_group()
-    role_group.add_argument('-a', '--ask-role', action='store_true', help='Set true to always pick the role')
-    role_group.add_argument('-r', '--role-arn', help='The ARN of the role to assume')
-    parser.add_argument('-k', '--keyring', action='store_true', help='Use keyring for storing the password.')
-    parser.add_argument('-l', '--log', dest='log_level', choices=['debug',
-                        'info', 'warn'], default='warn', help='Select log level (default: %(default)s)')
-    parser.add_argument('-V', '--version', action='version',
-                        version='%(prog)s {version}'.format(version=_version.__version__))
+    role_group.add_argument("-a", "--ask-role", action="store_true", help="Set true to always pick the role")
+    role_group.add_argument("-r", "--role-arn", help="The ARN of the role to assume")
+    parser.add_argument("-k", "--keyring", action="store_true", help="Use keyring for storing the password.")
+    parser.add_argument(
+        "-l",
+        "--log",
+        dest="log_level",
+        choices=["debug", "info", "warn"],
+        default="warn",
+        help="Select log level (default: %(default)s)",
+    )
+    parser.add_argument(
+        "-V", "--version", action="version", version="%(prog)s {version}".format(version=_version.__version__)
+    )
 
     return parser.parse_args(args)
 
@@ -66,32 +100,31 @@ def parse_args(args):
 def exit_if_unsupported_python():
     if sys.version_info < (3, 14):
         logging.critical("%s requires Python 3.14 or higher.", __name__)
-        logging.critical("For debugging, it appears you're running: %s",
-                         sys.version_info)
+        logging.critical("For debugging, it appears you're running: %s", sys.version_info)
         sys.exit(1)
 
 
 def extract_saml_assertion(assertion):
     value = assertion.strip()
 
-    if '<' in value and 'SAMLResponse' in value:
-        parsed = BeautifulSoup(value, 'html.parser')
-        saml_input = parsed.find(attrs={'name': 'SAMLResponse'})
-        if saml_input and saml_input.get('value'):
-            value = saml_input.get('value').strip()
-    elif 'SAMLResponse' in value:
+    if "<" in value and "SAMLResponse" in value:
+        parsed = BeautifulSoup(value, "html.parser")
+        saml_input = parsed.find(attrs={"name": "SAMLResponse"})
+        if saml_input and saml_input.get("value"):
+            value = saml_input.get("value").strip()
+    elif "SAMLResponse" in value:
         parsed_query = urllib_parse.parse_qs(urllib_parse.urlsplit(value).query)
-        if 'SAMLResponse' not in parsed_query:
+        if "SAMLResponse" not in parsed_query:
             parsed_query = urllib_parse.parse_qs(value)
 
-        if parsed_query.get('SAMLResponse'):
-            value = parsed_query['SAMLResponse'][0].strip()
+        if parsed_query.get("SAMLResponse"):
+            value = parsed_query["SAMLResponse"][0].strip()
         else:
-            match = re.search(r'SAMLResponse=([^&\s]+)', value)
+            match = re.search(r"SAMLResponse=([^&\s]+)", value)
             if match:
                 value = urllib_parse.unquote_plus(match.group(1)).strip()
 
-    return value.replace(' ', '+').replace('\n', '').replace('\r', '')
+    return value.replace(" ", "+").replace("\n", "").replace("\r", "")
 
 
 def decode_saml_assertion(assertion):
@@ -121,7 +154,7 @@ def capture_browser_saml_assertion(
     timeout_seconds,
     firefox_executable=None,
     firefox_profile=None,
-    geckodriver_executable='geckodriver',
+    geckodriver_executable="geckodriver",
 ):
     from aws_google_auth import browser_capture
 
@@ -193,113 +226,67 @@ def resolve_config(args):
 
     # Have the configuration update itself via the ~/.aws/config on disk.
     # Profile (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.profile = strip_if_string(coalesce(
-        args.profile,
-        os.getenv('AWS_PROFILE'),
-        config.profile))
+    config.profile = strip_if_string(coalesce(args.profile, os.getenv("AWS_PROFILE"), config.profile))
 
     # Now that we've established the profile, we can read the configuration and
     # fill in all the other variables.
     config.read(config.profile)
 
     # Ask Role (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.ask_role = bool(coalesce(
-        args.ask_role,
-        os.getenv('AWS_ASK_ROLE'),
-        config.ask_role))
+    config.ask_role = bool(coalesce(args.ask_role, os.getenv("AWS_ASK_ROLE"), config.ask_role))
 
     # Duration (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.duration = int(coalesce(
-        args.duration,
-        os.getenv('DURATION'),
-        config.duration))
+    config.duration = int(coalesce(args.duration, os.getenv("DURATION"), config.duration))
 
     # Automatic duration (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.auto_duration = coalesce(
-        args.auto_duration,
-        os.getenv('AUTO_DURATION'),
-        config.auto_duration
-    )
+    config.auto_duration = coalesce(args.auto_duration, os.getenv("AUTO_DURATION"), config.auto_duration)
 
     # IDP ID (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.idp_id = strip_if_string(coalesce(
-        args.idp_id,
-        os.getenv('GOOGLE_IDP_ID'),
-        config.idp_id))
+    config.idp_id = strip_if_string(coalesce(args.idp_id, os.getenv("GOOGLE_IDP_ID"), config.idp_id))
 
     # Region (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.region = strip_if_string(coalesce(
-        args.region,
-        os.getenv('AWS_DEFAULT_REGION'),
-        config.region))
+    config.region = strip_if_string(coalesce(args.region, os.getenv("AWS_DEFAULT_REGION"), config.region))
 
     # ROLE ARN (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.role_arn = strip_if_string(coalesce(
-        args.role_arn,
-        os.getenv('AWS_ROLE_ARN'),
-        config.role_arn))
+    config.role_arn = strip_if_string(coalesce(args.role_arn, os.getenv("AWS_ROLE_ARN"), config.role_arn))
 
     # SP ID (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.sp_id = strip_if_string(coalesce(
-        args.sp_id,
-        os.getenv('GOOGLE_SP_ID'),
-        config.sp_id))
+    config.sp_id = strip_if_string(coalesce(args.sp_id, os.getenv("GOOGLE_SP_ID"), config.sp_id))
 
     # U2F Disabled (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.u2f_disabled = coalesce(
-        args.disable_u2f,
-        os.getenv('U2F_DISABLED'),
-        config.u2f_disabled)
+    config.u2f_disabled = coalesce(args.disable_u2f, os.getenv("U2F_DISABLED"), config.u2f_disabled)
 
     # Resolve AWS aliases enabled (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.resolve_aliases = coalesce(
-        args.resolve_aliases,
-        os.getenv('RESOLVE_AWS_ALIASES'),
-        config.resolve_aliases)
+    config.resolve_aliases = coalesce(args.resolve_aliases, os.getenv("RESOLVE_AWS_ALIASES"), config.resolve_aliases)
 
     # Username (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.username = strip_if_string(coalesce(
-        args.username,
-        os.getenv('GOOGLE_USERNAME'),
-        config.username))
+    config.username = strip_if_string(coalesce(args.username, os.getenv("GOOGLE_USERNAME"), config.username))
 
     # Account (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.account = strip_if_string(coalesce(
-        args.account,
-        os.getenv('AWS_ACCOUNT'),
-        config.account))
+    config.account = strip_if_string(coalesce(args.account, os.getenv("AWS_ACCOUNT"), config.account))
 
-    requested_firefox_profile = strip_if_string(coalesce(
-        args.firefox_profile,
-        os.getenv('AWS_GOOGLE_AUTH_FIREFOX_PROFILE')))
+    requested_firefox_profile = strip_if_string(
+        coalesce(args.firefox_profile, os.getenv("AWS_GOOGLE_AUTH_FIREFOX_PROFILE"))
+    )
     if requested_firefox_profile is None and config.firefox_profile:
         # Firefox renames and moves profiles, so a saved path can go stale.
         if not os.path.isdir(os.path.expanduser(config.firefox_profile)):
             logging.warning(
-                "Saved Firefox profile %s no longer exists; using the default profile instead.",
-                config.firefox_profile)
+                "Saved Firefox profile %s no longer exists; using the default profile instead.", config.firefox_profile
+            )
             config.firefox_profile = None
-    config.firefox_profile = strip_if_string(coalesce(
-        requested_firefox_profile,
-        config.firefox_profile))
+    config.firefox_profile = strip_if_string(coalesce(requested_firefox_profile, config.firefox_profile))
 
-    config.keyring = coalesce(
-        args.keyring,
-        config.keyring)
+    config.keyring = coalesce(args.keyring, config.keyring)
 
-    config.print_creds = coalesce(
-        args.print_creds,
-        config.print_creds)
+    config.print_creds = coalesce(args.print_creds, config.print_creds)
 
     # Quiet
-    config.quiet = coalesce(
-        args.quiet,
-        config.quiet)
+    config.quiet = coalesce(args.quiet, config.quiet)
 
-    config.bg_response = strip_if_string(coalesce(
-        args.bg_response,
-        os.getenv('GOOGLE_BG_RESPONSE'),
-        config.bg_response))
+    config.bg_response = strip_if_string(
+        coalesce(args.bg_response, os.getenv("GOOGLE_BG_RESPONSE"), config.bg_response)
+    )
 
     return config
 
@@ -311,7 +298,7 @@ def process_auth(args, config):
 
     if config.region is None:
         config.region = util.Util.get_input("AWS Region: ")
-        logging.debug('%s: region is: %s', __name__, config.region)
+        logging.debug("%s: region is: %s", __name__, config.region)
 
     # If there is a valid cache and the user opted to use it, use that instead
     # of prompting the user for input (it will also ignroe any set variables
@@ -323,10 +310,10 @@ def process_auth(args, config):
     elif args.browser_capture:
         if config.idp_id is None:
             config.idp_id = util.Util.get_input("Google IDP ID: ")
-            logging.debug('%s: idp is: %s', __name__, config.idp_id)
+            logging.debug("%s: idp is: %s", __name__, config.idp_id)
         if config.sp_id is None:
             config.sp_id = util.Util.get_input("Google SP ID: ")
-            logging.debug('%s: sp is: %s', __name__, config.sp_id)
+            logging.debug("%s: sp is: %s", __name__, config.sp_id)
 
         saml_xml, browser_account_aliases = capture_browser_saml_assertion(
             config,
@@ -338,27 +325,27 @@ def process_auth(args, config):
     elif args.browser:
         if config.idp_id is None:
             config.idp_id = util.Util.get_input("Google IDP ID: ")
-            logging.debug('%s: idp is: %s', __name__, config.idp_id)
+            logging.debug("%s: idp is: %s", __name__, config.idp_id)
         if config.sp_id is None:
             config.sp_id = util.Util.get_input("Google SP ID: ")
-            logging.debug('%s: sp is: %s', __name__, config.sp_id)
+            logging.debug("%s: sp is: %s", __name__, config.sp_id)
 
         saml_xml = get_browser_saml_assertion(config)
     elif args.saml_cache and config.saml_cache:
         saml_xml = config.saml_cache
-        logging.info('%s: SAML cache found', __name__)
+        logging.info("%s: SAML cache found", __name__)
     else:
         # No cache, continue without.
-        logging.info('%s: SAML cache not found', __name__)
+        logging.info("%s: SAML cache not found", __name__)
         if config.username is None:
             config.username = util.Util.get_input("Google username: ")
-            logging.debug('%s: username is: %s', __name__, config.username)
+            logging.debug("%s: username is: %s", __name__, config.username)
         if config.idp_id is None:
             config.idp_id = util.Util.get_input("Google IDP ID: ")
-            logging.debug('%s: idp is: %s', __name__, config.idp_id)
+            logging.debug("%s: idp is: %s", __name__, config.idp_id)
         if config.sp_id is None:
             config.sp_id = util.Util.get_input("Google SP ID: ")
-            logging.debug('%s: sp is: %s', __name__, config.sp_id)
+            logging.debug("%s: sp is: %s", __name__, config.sp_id)
 
         # There is no way (intentional) to pass in the password via the command
         # line nor environment variables. This prevents password leakage.
@@ -378,12 +365,11 @@ def process_auth(args, config):
         google_client = google.Google(config, save_failure=args.save_failure_html, save_flow=args.save_saml_flow)
         google_client.do_login()
         saml_xml = google_client.parse_saml()
-        logging.debug('%s: saml assertion is: %s', __name__, saml_xml)
+        logging.debug("%s: saml assertion is: %s", __name__, saml_xml)
 
         # If we logged in correctly and we are using keyring then store the password
         if config.keyring and keyring_password is None:
-            keyring.set_password(
-                "aws-google-auth", config.username, config.password)
+            keyring.set_password("aws-google-auth", config.username, config.password)
 
     # We now have a new SAML value that can get cached (If the user asked
     # for it to be)
@@ -430,5 +416,5 @@ def main():
     cli(cli_args)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
