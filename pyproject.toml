@@ -64,7 +64,6 @@ lint = [
 ]
 test = [
     "coverage>=7.16.2",
-    "coveralls>=4.1.0",
     "pytest>=9.1.1",
 ]
 docs = [

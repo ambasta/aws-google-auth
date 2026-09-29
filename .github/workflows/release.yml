@@ -1,0 +1,46 @@
+# Publishing a GitHub release builds the wheel and source archive and attaches
+# them to that release. To cut one:
+#
+#   uv version --bump patch        # or minor/major; updates pyproject.toml
+#   git commit -am "chore: release $(uv version --short)" && git push
+#   gh release create "v$(uv version --short)" --generate-notes
+#
+# The aws-google-auth name on PyPI belongs to the upstream project, so this
+# fork does not publish there.
+
+name: Release
+
+on:
+  release:
+    types: [ published ]
+
+permissions:
+  contents: write
+
+env:
+  UV_PYTHON: '3.14'
+
+jobs:
+  build:
+    name: Build and attach packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Check the tag matches the version in pyproject.toml
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(uv version --short)"
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "::error::Release tag $TAG does not match version $version in pyproject.toml. Bump it with 'uv version <new-version>' and tag v<new-version>."
+            exit 1
+          fi
+      - name: Build wheel and sdist
+        run: uv build --no-sources
+      - name: Attach packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/* --clobber --repo "${{ github.repository }}"

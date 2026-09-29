@@ -1,0 +1,82 @@
+# Runs on every push to main and every pull request. Each step runs the same
+# command you would run locally, so a red check can be reproduced with:
+#
+#   uv sync --all-extras
+#   uv run ruff check
+#   uv run ruff format --check
+#   uv run ty check
+#   uv run pytest
+#   uv run rst-lint README.rst
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_PYTHON: '3.14'
+
+jobs:
+  lint:
+    name: Lint and type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Install dependencies
+        run: uv sync --all-extras --locked
+      - name: Lint (ruff check)
+        run: uv run ruff check --output-format=github
+      - name: Check formatting (ruff format)
+        run: uv run ruff format --check --diff
+      - name: Type check (ty)
+        run: uv run ty check --output-format=github
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Install dependencies
+        run: uv sync --all-extras --locked
+      - name: Run tests with coverage
+        run: uv run coverage run -m pytest
+      - name: Write coverage summary
+        if: always()
+        run: |
+          uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          uv run coverage xml
+      - name: Upload coverage to Coveralls
+        # Coverage reporting is informational; an outage shouldn't fail CI.
+        continue-on-error: true
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.xml
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Install dependencies
+        run: uv sync --only-group docs --locked
+      - name: Check README.rst renders
+        run: uv run --no-sync rst-lint README.rst
