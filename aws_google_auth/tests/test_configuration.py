@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 
+import os
+import tempfile
+import textwrap
 import unittest
+from unittest import mock
 
 from aws_google_auth import configuration
 
@@ -427,3 +431,104 @@ class TestConfigurationMethods(unittest.TestCase):
         c.sp_id = "sample_sp_id"
         c.username = "sample_username"
         c.raise_if_invalid()
+
+
+class TestSharedSettings(unittest.TestCase):
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.config_file = os.path.join(self.temp_dir.name, 'config')
+        patcher = mock.patch.dict(os.environ, {
+            'AWS_CONFIG_FILE': self.config_file,
+            'AWS_SHARED_CREDENTIALS_FILE': os.path.join(self.temp_dir.name, 'credentials'),
+        })
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.temp_dir.cleanup)
+
+    def write_config(self, text):
+        with open(self.config_file, 'w') as config_file:
+            config_file.write(textwrap.dedent(text))
+
+    def read(self, profile):
+        c = configuration.Configuration()
+        c.read(profile)
+        return c
+
+    def test_profile_values_win(self):
+        self.write_config("""
+            [default]
+            google_config.google_idp_id = default_idp
+
+            [profile one]
+            region = eu-west-1
+            google_config.google_idp_id = one_idp
+            google_config.duration = 900
+        """)
+
+        c = self.read('one')
+
+        self.assertEqual('one_idp', c.idp_id)
+        self.assertEqual('eu-west-1', c.region)
+        self.assertEqual(900, c.duration)
+
+    def test_new_profile_inherits_from_default(self):
+        self.write_config("""
+            [default]
+            region = eu-west-1
+            google_config.google_idp_id = default_idp
+            google_config.google_sp_id = default_sp
+            google_config.duration = 1800
+
+            [profile one]
+            google_config.google_idp_id = one_idp
+        """)
+
+        c = self.read('new')
+
+        self.assertEqual('default_idp', c.idp_id)
+        self.assertEqual('default_sp', c.sp_id)
+        self.assertEqual('eu-west-1', c.region)
+        self.assertEqual(1800, c.duration)
+
+    def test_new_profile_inherits_values_google_profiles_agree_on(self):
+        self.write_config("""
+            [profile sso]
+            region = us-east-1
+
+            [profile one]
+            region = ap-south-1
+            google_config.google_idp_id = idp
+            google_config.google_sp_id = sp
+            google_config.google_username = one@example.com
+            google_config.duration = 3600
+
+            [profile two]
+            region = ap-south-1
+            google_config.google_idp_id = idp
+            google_config.google_sp_id = sp
+            google_config.google_username = two@example.com
+            google_config.duration = 3600
+        """)
+
+        c = self.read('new')
+
+        self.assertEqual('idp', c.idp_id)
+        self.assertEqual('sp', c.sp_id)
+        self.assertEqual('ap-south-1', c.region)
+        self.assertEqual(3600, c.duration)
+        # The profiles disagree, so nothing is inherited.
+        self.assertIsNone(c.username)
+
+    def test_unset_values_are_not_inherited(self):
+        self.write_config("""
+            [profile one]
+            google_config.google_idp_id = idp
+            google_config.google_username = None
+        """)
+
+        c = self.read('new')
+
+        self.assertEqual('idp', c.idp_id)
+        self.assertIsNone(c.username)
+        self.assertEqual(c.max_duration, c.duration)

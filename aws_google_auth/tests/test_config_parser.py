@@ -1,9 +1,31 @@
 import os
+import tempfile
 import unittest
 
 from unittest import mock
 
 from aws_google_auth import resolve_config, parse_args
+
+
+# Keep the developer's own ~/.aws/config from leaking into the defaults.
+_aws_files = None
+
+
+def setUpModule():
+    global _aws_files
+    temp_dir = tempfile.TemporaryDirectory()
+    patcher = mock.patch.dict(os.environ, {
+        'AWS_CONFIG_FILE': os.path.join(temp_dir.name, 'config'),
+        'AWS_SHARED_CREDENTIALS_FILE': os.path.join(temp_dir.name, 'credentials'),
+    })
+    patcher.start()
+    _aws_files = (temp_dir, patcher)
+
+
+def tearDownModule():
+    temp_dir, patcher = _aws_files
+    patcher.stop()
+    temp_dir.cleanup()
 
 
 class TestProfileProcessing(unittest.TestCase):

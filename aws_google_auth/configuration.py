@@ -205,6 +205,32 @@ class Configuration(object):
                 finally:
                     saml_cache_file_lock.release()
 
+    # Settings that are normally identical for every profile behind the same
+    # Google IdP. A profile that does not set one inherits it from [default],
+    # or else from the other Google profiles when they all agree on a value.
+    @staticmethod
+    def read_shared_setting(config_parser, profile_string, key):
+        def usable(section):
+            value = config_parser.get(section, key, fallback=None)
+            if value is None or value.strip() in ('', 'None'):
+                return None
+            return value.strip()
+
+        for section in (profile_string, 'default'):
+            value = usable(section) if config_parser.has_section(section) else None
+            if value is not None:
+                return value
+
+        google_profiles = [
+            section for section in config_parser.sections()
+            if section.startswith('profile ') and config_parser.has_option(section, 'google_config.google_idp_id')
+        ]
+        values = {usable(section) for section in google_profiles}
+        values.discard(None)
+        if len(values) == 1:
+            return values.pop()
+        return None
+
     # Read from the configuration file and override ALL values currently stored
     # in the configuration object. As this is potentially destructive, it's
     # important to only run this in the beginning of the object initialization.
@@ -221,6 +247,25 @@ class Configuration(object):
         config_parser = configparser.RawConfigParser()
         config_parser.read(self.config_file)
 
+        def read_shared(key):
+            return unicode_to_string(Configuration.read_shared_setting(config_parser, profile_string, key))
+
+        read_idp_id = read_shared('google_config.google_idp_id')
+        self.idp_id = coalesce(read_idp_id, self.idp_id)
+
+        read_sp_id = read_shared('google_config.google_sp_id')
+        self.sp_id = coalesce(read_sp_id, self.sp_id)
+
+        read_username = read_shared('google_config.google_username')
+        self.username = coalesce(read_username, self.username)
+
+        read_duration = read_shared('google_config.duration')
+        if read_duration is not None:
+            self.duration = int(read_duration)
+
+        read_region = read_shared('region')
+        self.region = coalesce(read_region, self.region)
+
         if config_parser.has_section(profile_string):
             self.profile = profile
 
@@ -232,33 +277,13 @@ class Configuration(object):
             read_keyring = config_parser[profile_string].getboolean('google_config.keyring', None)
             self.keyring = coalesce(read_keyring, self.keyring)
 
-            # Duration
-            read_duration = config_parser[profile_string].getint('google_config.duration', None)
-            self.duration = coalesce(read_duration, self.duration)
-
-            # IDP ID
-            read_idp_id = unicode_to_string(config_parser[profile_string].get('google_config.google_idp_id', None))
-            self.idp_id = coalesce(read_idp_id, self.idp_id)
-
-            # Region
-            read_region = unicode_to_string(config_parser[profile_string].get('region', None))
-            self.region = coalesce(read_region, self.region)
-
             # Role ARN
             read_role_arn = unicode_to_string(config_parser[profile_string].get('google_config.role_arn', None))
             self.role_arn = coalesce(read_role_arn, self.role_arn)
 
-            # SP ID
-            read_sp_id = unicode_to_string(config_parser[profile_string].get('google_config.google_sp_id', None))
-            self.sp_id = coalesce(read_sp_id, self.sp_id)
-
             # U2F Disabled
             read_u2f_disabled = config_parser[profile_string].getboolean('google_config.u2f_disabled', None)
             self.u2f_disabled = coalesce(read_u2f_disabled, self.u2f_disabled)
-
-            # Username
-            read_username = unicode_to_string(config_parser[profile_string].get('google_config.google_username', None))
-            self.username = coalesce(read_username, self.username)
 
             # bg_response
             read_bg_response = unicode_to_string(config_parser[profile_string].get('google_config.bg_response', None))
