@@ -269,9 +269,18 @@ def resolve_config(args):
         os.getenv('AWS_ACCOUNT'),
         config.account))
 
-    config.firefox_profile = strip_if_string(coalesce(
+    requested_firefox_profile = strip_if_string(coalesce(
         args.firefox_profile,
-        os.getenv('AWS_GOOGLE_AUTH_FIREFOX_PROFILE'),
+        os.getenv('AWS_GOOGLE_AUTH_FIREFOX_PROFILE')))
+    if requested_firefox_profile is None and config.firefox_profile:
+        # Firefox renames and moves profiles, so a saved path can go stale.
+        if not os.path.isdir(os.path.expanduser(config.firefox_profile)):
+            logging.warning(
+                "Saved Firefox profile %s no longer exists; using the default profile instead.",
+                config.firefox_profile)
+            config.firefox_profile = None
+    config.firefox_profile = strip_if_string(coalesce(
+        requested_firefox_profile,
         config.firefox_profile))
 
     config.keyring = coalesce(

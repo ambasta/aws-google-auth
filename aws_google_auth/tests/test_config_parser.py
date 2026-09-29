@@ -101,6 +101,29 @@ class TestFirefoxProfileProcessing(unittest.TestCase):
         config = resolve_config(args)
         self.assertEqual('/home/me/.mozilla/firefox/default', config.firefox_profile)
 
+    def write_saved_profile(self, firefox_profile):
+        with open(os.environ['AWS_CONFIG_FILE'], 'w') as config_file:
+            config_file.write(
+                "[profile saved]\ngoogle_config.firefox_profile = {}\n".format(firefox_profile))
+        self.addCleanup(os.remove, os.environ['AWS_CONFIG_FILE'])
+
+    def test_saved_profile_is_used_when_it_exists(self):
+        with tempfile.TemporaryDirectory() as firefox_profile:
+            self.write_saved_profile(firefox_profile)
+            config = resolve_config(parse_args(['-p', 'saved']))
+        self.assertEqual(firefox_profile, config.firefox_profile)
+
+    def test_stale_saved_profile_is_dropped(self):
+        self.write_saved_profile('/nonexistent/firefox/gone.default-release')
+        with self.assertLogs(level='WARNING'):
+            config = resolve_config(parse_args(['-p', 'saved']))
+        self.assertEqual(None, config.firefox_profile)
+
+    def test_missing_cli_profile_is_kept(self):
+        self.write_saved_profile('/nonexistent/firefox/gone.default-release')
+        config = resolve_config(parse_args(['-p', 'saved', '--firefox-profile', '/nonexistent/other']))
+        self.assertEqual('/nonexistent/other', config.firefox_profile)
+
 
 class TestDurationProcessing(unittest.TestCase):
 

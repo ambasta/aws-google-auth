@@ -60,6 +60,15 @@ class TestConfigurationPersistence(unittest.TestCase):
         self.assertEqual(self.config_parser[profile_string].get('google_config.bg_response'), self.c.bg_response)
         self.assertEqual(self.config_parser[profile_string].get('google_config.firefox_profile'), self.c.firefox_profile)
 
+    def test_unset_firefox_profile_is_removed(self):
+        self.c.firefox_profile = None
+        self.c.write(None)
+
+        config_parser = configparser.RawConfigParser()
+        config_parser.read(self.c.config_file)
+        profile_string = configuration.Configuration.config_profile(self.c.profile)
+        self.assertFalse(config_parser.has_option(profile_string, 'google_config.firefox_profile'))
+
     def test_password_not_written(self):
         profile_string = configuration.Configuration.config_profile(self.c.profile)
         self.assertIsNone(self.config_parser[profile_string].get('google_config.password', None))

@@ -170,6 +170,8 @@ class Configuration(object):
             config_parser.set(profile, 'google_config.bg_response', self.bg_response)
             if self.firefox_profile is not None:
                 config_parser.set(profile, 'google_config.firefox_profile', self.firefox_profile)
+            else:
+                config_parser.remove_option(profile, 'google_config.firefox_profile')
 
             with open(self.config_file, 'w+') as f:
                 config_parser.write(f)
