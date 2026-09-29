@@ -4,12 +4,12 @@ import base64
 import boto3
 import os
 import re
+import xml.etree.ElementTree as ET
 
 from datetime import UTC, datetime
 from threading import Thread
 
 from botocore.exceptions import ClientError, ProfileNotFound
-from lxml import etree
 
 from aws_google_auth.google import ExpectedGoogleException
 
@@ -75,12 +75,13 @@ class Amazon:
 
     @property
     def roles(self):
-        doc = etree.fromstring(self.saml_xml)
+        doc = ET.fromstring(self.saml_xml)
         roles = {}
-        for x in doc.xpath('//*[@Name = "https://aws.amazon.com/SAML/Attributes/Role"]//text()'):
-            if "arn:aws:iam:" in x or "arn:aws-us-gov:iam:" in x:
-                res = x.split(",")
-                roles[res[0]] = res[1]
+        for attribute in doc.iterfind('.//*[@Name="https://aws.amazon.com/SAML/Attributes/Role"]'):
+            for x in attribute.itertext():
+                if "arn:aws:iam:" in x or "arn:aws-us-gov:iam:" in x:
+                    res = x.split(",")
+                    roles[res[0]] = res[1]
         return roles
 
     def assume_role(self, role, principal, saml_assertion, duration=None, auto_duration=True):
@@ -161,7 +162,7 @@ class Amazon:
             return False
 
         try:
-            doc = etree.fromstring(saml_xml)
+            doc = ET.fromstring(saml_xml)
             conditions = list(doc.iter(tag="{urn:oasis:names:tc:SAML:2.0:assertion}Conditions"))
             not_before_str = conditions[0].get("NotBefore")
             not_on_or_after_str = conditions[0].get("NotOnOrAfter")
