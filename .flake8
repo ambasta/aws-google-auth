@@ -1,6 +1,0 @@
-[flake8]
-exclude =
-    .git,
-    .venv,
-    build,
-    dist

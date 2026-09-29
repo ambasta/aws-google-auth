@@ -63,7 +63,7 @@ dev = [
     { include-group = "docs" },
 ]
 lint = [
-    "flake8>=7",
+    "ruff>=0.16",
 ]
 test = [
     "coverage>=7",
@@ -86,3 +86,21 @@ addopts = ["--strict-markers", "--strict-config"]
 [tool.coverage.run]
 source = ["aws_google_auth"]
 omit = ["aws_google_auth/tests/*"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "W",
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",
+]
+ignore = [
+    "E501",  # ruff format owns line length; long strings and URLs are left alone
+]
