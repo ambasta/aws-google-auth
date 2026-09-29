@@ -1,10 +1,37 @@
 #!/usr/bin/env python
 
 import configparser
+import os
+import tempfile
 import unittest
 from random import randint
+from unittest import mock
 
 from aws_google_auth import configuration
+
+# Write to a throwaway config instead of the developer's own ~/.aws files.
+_aws_files: tuple[tempfile.TemporaryDirectory[str], mock._patch_dict] | None = None
+
+
+def setUpModule():
+    global _aws_files
+    temp_dir = tempfile.TemporaryDirectory()
+    patcher = mock.patch.dict(
+        os.environ,
+        {
+            "AWS_CONFIG_FILE": os.path.join(temp_dir.name, "config"),
+            "AWS_SHARED_CREDENTIALS_FILE": os.path.join(temp_dir.name, "credentials"),
+        },
+    )
+    patcher.start()
+    _aws_files = (temp_dir, patcher)
+
+
+def tearDownModule():
+    assert _aws_files is not None
+    temp_dir, patcher = _aws_files
+    patcher.stop()
+    temp_dir.cleanup()
 
 
 class TestConfigurationPersistence(unittest.TestCase):
@@ -31,6 +58,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         self.c.bg_response = "foo"
         self.c.firefox_profile = "/home/test/.mozilla/firefox/default"
         self.c.raise_if_invalid()
+        assert self.c.config_file.startswith(tempfile.gettempdir())
         self.c.write(None)
         self.c.account = "123456789012"
 
@@ -64,6 +92,7 @@ class TestConfigurationPersistence(unittest.TestCase):
 
     def test_unset_firefox_profile_is_removed(self):
         self.c.firefox_profile = None
+        assert self.c.config_file.startswith(tempfile.gettempdir())
         self.c.write(None)
 
         config_parser = configparser.RawConfigParser()
