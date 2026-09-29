@@ -79,7 +79,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         # Check for password leakage (It didn't get written in an odd way)
         with open(self.c.config_file) as config_file:
             for line in config_file:
-                self.assertFalse(self.c.password in line)
+                self.assertNotIn(self.c.password, line)
 
     def test_can_read_all_values(self):
         test_configuration = configuration.Configuration()

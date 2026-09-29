@@ -8,59 +8,62 @@ from aws_google_auth import amazon, util
 
 
 class Configuration:
-    def __init__(self, **kwargs):
-        self.options = {}
+    # Set once a role has been picked; there is no sensible default.
+    provider: str
+
+    def __init__(self, **kwargs: object) -> None:
+        self.options: dict[str, object] = {}
         self.__boto_session = botocore.session.Session()
 
         # Set up some defaults. These can be overridden as fit.
-        self.ask_role = False
-        self.keyring = False
-        self.duration = self.max_duration
-        self.auto_duration = False
-        self.idp_id = None
-        self.password = None
-        self.profile = "sts"
-        self.region = None
-        self.role_arn = None
-        self.__saml_cache = None
-        self.sp_id = None
-        self.u2f_disabled = False
-        self.resolve_aliases = False
-        self.username = None
-        self.print_creds = False
-        self.quiet = False
-        self.bg_response = None
-        self.account = ""
-        self.firefox_profile = None
+        self.ask_role: bool = False
+        self.keyring: bool = False
+        self.duration: int = self.max_duration
+        self.auto_duration: bool = False
+        self.idp_id: str | None = None
+        self.password: str | None = None
+        self.profile: str = "sts"
+        self.region: str | None = None
+        self.role_arn: str | None = None
+        self.__saml_cache: bytes | None = None
+        self.sp_id: str | None = None
+        self.u2f_disabled: bool = False
+        self.resolve_aliases: bool = False
+        self.username: str | None = None
+        self.print_creds: bool = False
+        self.quiet: bool = False
+        self.bg_response: str | None = None
+        self.account: str = ""
+        self.firefox_profile: str | None = None
 
     # For the "~/.aws/config" file, we use the format "[profile testing]"
     # for the 'testing' profile. The credential file will just be "[testing]"
     # in that case. See https://docs.aws.amazon.com/cli/latest/userguide/cli-multiple-profiles.html
     # for more information.
     @staticmethod
-    def config_profile(profile):
+    def config_profile(profile: str) -> str:
         if str(profile).lower() == "default":
             return profile
         else:
             return f"profile {profile!s}"
 
     @property
-    def max_duration(self):
+    def max_duration(self) -> int:
         return 43200
 
     @property
-    def credentials_file(self):
+    def credentials_file(self) -> str:
         return os.path.expanduser(self.__boto_session.get_config_variable("credentials_file"))
 
     @property
-    def config_file(self):
+    def config_file(self) -> str:
         return os.path.expanduser(self.__boto_session.get_config_variable("config_file"))
 
     @property
-    def saml_cache_file(self):
+    def saml_cache_file(self) -> str:
         return self.credentials_file.replace("credentials", f"saml_cache_{self.idp_id}.xml")
 
-    def ensure_config_files_exist(self):
+    def ensure_config_files_exist(self) -> None:
         for file in [self.config_file, self.credentials_file]:
             directory = os.path.dirname(file)
             if not os.path.exists(directory):
@@ -72,14 +75,14 @@ class Configuration:
     # return None. If the SAML cache isn't valid, we'll remove it from the
     # in-memory object. On the next write(), it will be purged from disk.
     @property
-    def saml_cache(self):
+    def saml_cache(self) -> bytes | None:
         if not amazon.Amazon.is_valid_saml_assertion(self.__saml_cache):
             self.__saml_cache = None
 
         return self.__saml_cache
 
     @saml_cache.setter
-    def saml_cache(self, value):
+    def saml_cache(self, value: bytes | None) -> None:
         self.__saml_cache = value
 
     # Will raise exceptions if the configuration is invalid, otherwise returns
@@ -87,7 +90,7 @@ class Configuration:
     # state. There are no checks here regarding SAML caching, as that's just a
     # user-performance improvement, and an invalid cache isn't an invalid
     # configuration.
-    def raise_if_invalid(self):
+    def raise_if_invalid(self) -> None:
         # ask_role
         assert self.ask_role.__class__ is bool, f"Expected ask_role to be a boolean. Got {self.ask_role.__class__}."
 
@@ -153,7 +156,7 @@ class Configuration:
     # Write the configuration (and credentials) out to disk. This allows for
     # regular AWS tooling (aws cli and boto) to use the credentials in the
     # profile the user specified.
-    def write(self, amazon_object):
+    def write(self, amazon_object: amazon.Amazon | None) -> None:
         self.ensure_config_files_exist()
 
         assert self.profile is not None, "Can not store config/credentials if the AWS_PROFILE is None."
@@ -168,13 +171,13 @@ class Configuration:
             if not config_parser.has_section(profile):
                 config_parser.add_section(profile)
             config_parser.set(profile, "region", self.region)
-            config_parser.set(profile, "google_config.ask_role", self.ask_role)
-            config_parser.set(profile, "google_config.keyring", self.keyring)
-            config_parser.set(profile, "google_config.duration", self.duration)
+            config_parser.set(profile, "google_config.ask_role", str(self.ask_role))
+            config_parser.set(profile, "google_config.keyring", str(self.keyring))
+            config_parser.set(profile, "google_config.duration", str(self.duration))
             config_parser.set(profile, "google_config.google_idp_id", self.idp_id)
             config_parser.set(profile, "google_config.role_arn", self.role_arn)
             config_parser.set(profile, "google_config.google_sp_id", self.sp_id)
-            config_parser.set(profile, "google_config.u2f_disabled", self.u2f_disabled)
+            config_parser.set(profile, "google_config.u2f_disabled", str(self.u2f_disabled))
             config_parser.set(profile, "google_config.google_username", self.username)
             config_parser.set(profile, "google_config.bg_response", self.bg_response)
             if self.firefox_profile is not None:
@@ -222,8 +225,8 @@ class Configuration:
     # Google IdP. A profile that does not set one inherits it from [default],
     # or else from the other Google profiles when they all agree on a value.
     @staticmethod
-    def read_shared_setting(config_parser, profile_string, key):
-        def usable(section):
+    def read_shared_setting(config_parser: configparser.RawConfigParser, profile_string: str, key: str) -> str | None:
+        def usable(section: str) -> str | None:
             value = config_parser.get(section, key, fallback=None)
             if value is None or value.strip() in ("", "None"):
                 return None
@@ -250,7 +253,7 @@ class Configuration:
     # important to only run this in the beginning of the object initialization.
     # We do not read AWS credentials, as this tool's use case is to obtain
     # them.
-    def read(self, profile):
+    def read(self, profile: str) -> None:
         self.ensure_config_files_exist()
 
         # Shortening Convenience functions
@@ -261,7 +264,7 @@ class Configuration:
         config_parser = configparser.RawConfigParser()
         config_parser.read(self.config_file)
 
-        def read_shared(key):
+        def read_shared(key: str) -> str | None:
             return unicode_to_string(Configuration.read_shared_setting(config_parser, profile_string, key))
 
         read_idp_id = read_shared("google_config.google_idp_id")

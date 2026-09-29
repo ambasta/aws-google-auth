@@ -14,8 +14,8 @@ class TestConfigurationMethods(unittest.TestCase):
         self.assertEqual(configuration.Configuration.config_profile("default"), "default")
         self.assertEqual(configuration.Configuration.config_profile("DEFAULT"), "DEFAULT")
         self.assertEqual(configuration.Configuration.config_profile("testing"), "profile testing")
-        self.assertEqual(configuration.Configuration.config_profile(None), "profile None")
-        self.assertEqual(configuration.Configuration.config_profile(123456), "profile 123456")
+        self.assertEqual(configuration.Configuration.config_profile(None), "profile None")  # ty: ignore[invalid-argument-type]
+        self.assertEqual(configuration.Configuration.config_profile(123456), "profile 123456")  # ty: ignore[invalid-argument-type]
 
     def test_duration_invalid_values(self):
         # Duration must be an integer
@@ -25,7 +25,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.password = "hunter2"
         c.sp_id = "sample_sp_id"
         c.username = "sample_username"
-        c.duration = "bad_type"
+        c.duration = "bad_type"  # ty: ignore[invalid-assignment]
         c.region = "sample_region"
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
@@ -96,7 +96,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.sp_id = "sample_sp_id"
         c.password = "hunter2"
         c.username = "sample_username"
-        c.ask_role = "bad_value"
+        c.ask_role = "bad_value"  # ty: ignore[invalid-assignment]
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
         self.assertIn("Expected ask_role to be a boolean.", str(e.exception))
@@ -151,7 +151,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.username = "sample_username"
         self.assertEqual(c.idp_id, "sample_idp_id")
         c.raise_if_invalid()
-        c.idp_id = 123456
+        c.idp_id = 123456  # ty: ignore[invalid-assignment]
         self.assertEqual(c.idp_id, 123456)
         c.raise_if_invalid()
 
@@ -195,7 +195,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.idp_id = "sample_idp_id"
         c.sp_id = "sample_sp_id"
         c.password = "hunter2"
-        c.username = 123456
+        c.username = 123456  # ty: ignore[invalid-assignment]
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
         self.assertIn("Expected username to be a string.", str(e.exception))
@@ -228,7 +228,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.region = "sample_region"
         c.idp_id = "sample_idp_id"
         c.sp_id = "sample_sp_id"
-        c.password = 123456
+        c.password = 123456  # ty: ignore[invalid-assignment]
         c.username = "sample_username"
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
@@ -243,7 +243,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.password = "hunter2"
         self.assertEqual(c.sp_id, "sample_sp_id")
         c.raise_if_invalid()
-        c.sp_id = 123456
+        c.sp_id = 123456  # ty: ignore[invalid-assignment]
         self.assertEqual(c.sp_id, 123456)
         c.raise_if_invalid()
 
@@ -265,7 +265,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.sp_id = "sample_sp_id"
         c.password = "hunter2"
         c.username = "sample_username"
-        c.profile = 123456
+        c.profile = 123456  # ty: ignore[invalid-assignment]
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
         self.assertIn("Expected profile to be a string.", str(e.exception))
@@ -301,7 +301,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.sp_id = "sample_sp_id"
         c.password = "hunter2"
         c.username = "sample_username"
-        c.region = 1234
+        c.region = 1234  # ty: ignore[invalid-assignment]
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
         self.assertIn("Expected region to be a string.", str(e.exception))
@@ -338,7 +338,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.sp_id = "sample_sp_id"
         c.password = "hunter2"
         c.username = "sample_username"
-        c.role_arn = 1234
+        c.role_arn = 1234  # ty: ignore[invalid-assignment]
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
         self.assertIn("Expected role_arn to be None or a string.", str(e.exception))
@@ -387,7 +387,7 @@ class TestConfigurationMethods(unittest.TestCase):
         c.sp_id = "sample_sp_id"
         c.username = "sample_username"
         c.password = "hunter2"
-        c.u2f_disabled = 1234
+        c.u2f_disabled = 1234  # ty: ignore[invalid-assignment]
         with self.assertRaises(AssertionError) as e:
             c.raise_if_invalid()
         self.assertIn("Expected u2f_disabled to be a boolean.", str(e.exception))

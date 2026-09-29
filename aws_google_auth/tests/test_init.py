@@ -37,7 +37,7 @@ class TestInit(unittest.TestCase):
         # Create a mock config to be returned from the resolve_config function
         mock_config = Mock()
         # Inject the mock as the return value from the function
-        aws_google_auth.resolve_config.return_value = mock_config
+        resolve_config.return_value = mock_config
 
         # Function under test
         aws_google_auth.cli([])

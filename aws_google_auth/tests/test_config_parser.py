@@ -6,7 +6,7 @@ from unittest import mock
 from aws_google_auth import parse_args, resolve_config
 
 # Keep the developer's own ~/.aws/config from leaking into the defaults.
-_aws_files = None
+_aws_files: tuple[tempfile.TemporaryDirectory[str], mock._patch_dict] | None = None
 
 
 def setUpModule():
@@ -24,6 +24,7 @@ def setUpModule():
 
 
 def tearDownModule():
+    assert _aws_files is not None
     temp_dir, patcher = _aws_files
     patcher.stop()
     temp_dir.cleanup()

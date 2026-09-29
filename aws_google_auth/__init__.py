@@ -6,6 +6,8 @@ import os
 import re
 import sys
 import webbrowser
+from collections.abc import Sequence
+from types import ModuleType
 from urllib import parse as urllib_parse
 
 from bs4 import BeautifulSoup
@@ -13,7 +15,7 @@ from bs4 import BeautifulSoup
 from aws_google_auth import _version, amazon, configuration, google, util
 
 
-def parse_args(args):
+def parse_args(args: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="aws-google-auth",
         description="Acquire temporary AWS credentials via Google SSO",
@@ -89,14 +91,15 @@ def parse_args(args):
     return parser.parse_args(args)
 
 
-def extract_saml_assertion(assertion):
+def extract_saml_assertion(assertion: str) -> str:
     value = assertion.strip()
 
     if "<" in value and "SAMLResponse" in value:
         parsed = BeautifulSoup(value, "html.parser")
-        saml_input = parsed.find(attrs={"name": "SAMLResponse"})
-        if saml_input and saml_input.get("value"):
-            value = saml_input.get("value").strip()
+        saml_input = parsed.find(None, attrs={"name": "SAMLResponse"})
+        saml_value = saml_input.get("value") if saml_input else None
+        if isinstance(saml_value, str) and saml_value:
+            value = saml_value.strip()
     elif "SAMLResponse" in value:
         parsed_query = urllib_parse.parse_qs(urllib_parse.urlsplit(value).query)
         if "SAMLResponse" not in parsed_query:
@@ -112,7 +115,7 @@ def extract_saml_assertion(assertion):
     return value.replace(" ", "+").replace("\n", "").replace("\r", "")
 
 
-def decode_saml_assertion(assertion):
+def decode_saml_assertion(assertion: str) -> bytes:
     try:
         return base64.b64decode(extract_saml_assertion(assertion))
     except (binascii.Error, ValueError) as ex:
@@ -122,7 +125,7 @@ def decode_saml_assertion(assertion):
         ) from ex
 
 
-def get_browser_saml_assertion(config):
+def get_browser_saml_assertion(config: configuration.Configuration) -> bytes:
     login_url = google.Google(config, save_failure=False).login_url
 
     print("Opening Google SSO in your browser:")
@@ -135,12 +138,12 @@ def get_browser_saml_assertion(config):
 
 
 def capture_browser_saml_assertion(
-    config,
-    timeout_seconds,
-    firefox_executable=None,
-    firefox_profile=None,
-    geckodriver_executable="geckodriver",
-):
+    config: configuration.Configuration,
+    timeout_seconds: float,
+    firefox_executable: str | None = None,
+    firefox_profile: str | None = None,
+    geckodriver_executable: str = "geckodriver",
+) -> tuple[bytes, dict[str, str]]:
     from aws_google_auth import browser_capture
 
     if firefox_executable is None:
@@ -170,7 +173,7 @@ def capture_browser_saml_assertion(
     except (RuntimeError, TimeoutError) as ex:
         raise google.ExpectedGoogleException(str(ex)) from ex
 
-    account_aliases = {}
+    account_aliases: dict[str, str] = {}
     if isinstance(capture_result, dict):
         assertion = capture_result["saml_response"]
         account_aliases = capture_result.get("account_aliases") or {}
@@ -184,7 +187,7 @@ def capture_browser_saml_assertion(
 
 
 # keyring is an optional extra; only -k/--keyring needs it.
-def load_keyring():
+def load_keyring() -> ModuleType:
     try:
         import keyring
     except ImportError as ex:
@@ -195,7 +198,7 @@ def load_keyring():
     return keyring
 
 
-def cli(cli_args):
+def cli(cli_args: Sequence[str]) -> None:
     try:
         args = parse_args(args=cli_args)
 
@@ -210,7 +213,7 @@ def cli(cli_args):
         logging.exception(ex)
 
 
-def resolve_config(args):
+def resolve_config(args: argparse.Namespace) -> configuration.Configuration:
 
     # Shortening Convenience functions
     coalesce = util.Util.coalesce
@@ -234,7 +237,7 @@ def resolve_config(args):
     config.duration = int(coalesce(args.duration, os.getenv("DURATION"), config.duration))
 
     # Automatic duration (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.auto_duration = coalesce(args.auto_duration, os.getenv("AUTO_DURATION"), config.auto_duration)
+    config.auto_duration = bool(coalesce(args.auto_duration, os.getenv("AUTO_DURATION"), config.auto_duration))
 
     # IDP ID (Option priority = ARGS, ENV_VAR, DEFAULT)
     config.idp_id = strip_if_string(coalesce(args.idp_id, os.getenv("GOOGLE_IDP_ID"), config.idp_id))
@@ -249,10 +252,12 @@ def resolve_config(args):
     config.sp_id = strip_if_string(coalesce(args.sp_id, os.getenv("GOOGLE_SP_ID"), config.sp_id))
 
     # U2F Disabled (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.u2f_disabled = coalesce(args.disable_u2f, os.getenv("U2F_DISABLED"), config.u2f_disabled)
+    config.u2f_disabled = bool(coalesce(args.disable_u2f, os.getenv("U2F_DISABLED"), config.u2f_disabled))
 
     # Resolve AWS aliases enabled (Option priority = ARGS, ENV_VAR, DEFAULT)
-    config.resolve_aliases = coalesce(args.resolve_aliases, os.getenv("RESOLVE_AWS_ALIASES"), config.resolve_aliases)
+    config.resolve_aliases = bool(
+        coalesce(args.resolve_aliases, os.getenv("RESOLVE_AWS_ALIASES"), config.resolve_aliases)
+    )
 
     # Username (Option priority = ARGS, ENV_VAR, DEFAULT)
     config.username = strip_if_string(coalesce(args.username, os.getenv("GOOGLE_USERNAME"), config.username))
@@ -286,10 +291,10 @@ def resolve_config(args):
     return config
 
 
-def process_auth(args, config):
+def process_auth(args: argparse.Namespace, config: configuration.Configuration) -> None:
     # Set up logging
-    logging.getLogger().setLevel(getattr(logging, args.log_level.upper(), None))
-    browser_account_aliases = {}
+    logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
+    browser_account_aliases: dict[str, str] = {}
 
     if config.region is None:
         config.region = util.Util.get_input("AWS Region: ")
@@ -407,7 +412,7 @@ def process_auth(args, config):
         config.write(amazon_client)
 
 
-def main():
+def main() -> None:
     cli_args = sys.argv[1:]
     cli(cli_args)
 

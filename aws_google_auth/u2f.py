@@ -2,6 +2,7 @@
 
 import json
 import time
+from collections.abc import Mapping, Sequence
 
 import requests
 from u2flib_host import appid, exc, u2f
@@ -17,7 +18,7 @@ valid for the facet https://accounts.google.com)
 """
 
 
-def __appid_verifier__fetch_json(app_id):
+def __appid_verifier__fetch_json(app_id: str) -> dict[str, object]:
     target = app_id
     while True:
         resp = requests.get(target, allow_redirects=False, verify=True)
@@ -36,11 +37,11 @@ def __appid_verifier__fetch_json(app_id):
             return resp.json()
 
 
-def __appid_verifier__valid_facets(app_id, facets):
+def __appid_verifier__valid_facets(app_id: str, facets: list[str]) -> list[str]:
     return facets
 
 
-def u2f_auth(challenges, facet):
+def u2f_auth(challenges: Sequence[Mapping[str, str]], facet: str) -> dict[str, str]:
     devices = u2f.list_devices()
     for device in devices[:]:
         try:
@@ -84,5 +85,7 @@ def u2f_auth(challenges, facet):
     raise RuntimeWarning("U2F Device Not Found")
 
 
-appid.verifier.fetch_json = __appid_verifier__fetch_json
-appid.verifier.valid_facets = __appid_verifier__valid_facets
+# Replacing bound methods on the shared verifier instance, so the patched
+# functions take no self.
+appid.verifier.fetch_json = __appid_verifier__fetch_json  # ty: ignore[invalid-assignment]
+appid.verifier.valid_facets = __appid_verifier__valid_facets  # ty: ignore[invalid-assignment]
