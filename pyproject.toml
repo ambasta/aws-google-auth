@@ -58,7 +58,9 @@ dev = [
     { include-group = "docs" },
 ]
 lint = [
+    "botocore-stubs>=1.43.67",
     "ruff>=0.16.9",
+    "ty>=0.0.84",
 ]
 test = [
     "coverage>=7.16.2",
@@ -95,7 +97,14 @@ select = [
     "B",    # flake8-bugbear
     "SIM",  # flake8-simplify
     "RUF",
+    "ANN",  # flake8-annotations: every function in the package is typed
 ]
 ignore = [
     "E501",  # ruff format owns line length; long strings and URLs are left alone
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"aws_google_auth/tests/**" = ["ANN"]
+
+[tool.ty.terminal]
+error-on-warning = true
