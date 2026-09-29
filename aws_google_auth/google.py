@@ -264,7 +264,7 @@ class Google:
     @staticmethod
     def find_app_id(inputString: str) -> str:
         try:
-            searchMatch = re.search('"appid":"[a-z://.-_] + "', inputString)
+            searchMatch = re.search('"appid":"[a-z://.-_]+"', inputString)
             if searchMatch is None:
                 raise ValueError("appid not found")
             searchResult = searchMatch.group()

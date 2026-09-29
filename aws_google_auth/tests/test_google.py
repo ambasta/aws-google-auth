@@ -22,6 +22,14 @@ class TestGoogle(unittest.TestCase):
         with self.assertRaises(ValueError):
             google.Google.check_extra_step(response)
 
+    def test_find_app_id(self):
+        payload = {"5010": [None, ["google.com", '{"appid":"https://www.gstatic.com/securitykey/origins.json"}']]}
+
+        self.assertEqual(
+            "https://www.gstatic.com/securitykey/origins.json",
+            google.Google.find_app_id(str(payload)),
+        )
+
     def test_find_keyhandles(self):
         challenges_txt = "RFVNTVlDSEFMTEVOR0U="
 
