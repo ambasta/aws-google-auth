@@ -8,7 +8,6 @@ import logging
 import webbrowser
 from urllib import parse as urllib_parse
 
-import keyring
 from bs4 import BeautifulSoup
 
 from aws_google_auth import _version
@@ -197,6 +196,18 @@ def capture_browser_saml_assertion(
     return decode_saml_assertion(assertion), account_aliases
 
 
+# keyring is an optional extra; only -k/--keyring needs it.
+def load_keyring():
+    try:
+        import keyring
+    except ImportError as ex:
+        raise google.ExpectedGoogleException(
+            "-k/--keyring needs the keyring extra. Reinstall with: "
+            'uv tool install --reinstall "aws-google-auth[keyring] @ git+https://github.com/ambasta/aws-google-auth"'
+        ) from ex
+    return keyring
+
+
 def cli(cli_args):
     try:
         exit_if_unsupported_python()
@@ -350,6 +361,7 @@ def process_auth(args, config):
         # line nor environment variables. This prevents password leakage.
         keyring_password = None
         if config.keyring:
+            keyring = load_keyring()
             keyring_password = keyring.get_password("aws-google-auth", config.username)
             if keyring_password:
                 config.password = keyring_password
@@ -368,7 +380,7 @@ def process_auth(args, config):
 
         # If we logged in correctly and we are using keyring then store the password
         if config.keyring and keyring_password is None:
-            keyring.set_password("aws-google-auth", config.username, config.password)
+            load_keyring().set_password("aws-google-auth", config.username, config.password)
 
     # We now have a new SAML value that can get cached (If the user asked
     # for it to be)

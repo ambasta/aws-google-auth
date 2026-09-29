@@ -10,6 +10,11 @@ class TestInit(unittest.TestCase):
     def setUp(self):
         pass
 
+    def test_load_keyring_explains_missing_extra(self):
+        with patch.dict("sys.modules", {"keyring": None}):
+            with self.assertRaisesRegex(aws_google_auth.google.ExpectedGoogleException, r"aws-google-auth\[keyring\]"):
+                aws_google_auth.load_keyring()
+
     @patch("aws_google_auth.cli", spec=True)
     def test_main_method_has_no_parameters(self, mock_cli):
         """
