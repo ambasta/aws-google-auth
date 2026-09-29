@@ -124,15 +124,24 @@ the SAML assertion from the browser's POST to AWS.
 
 .. code:: shell
 
-    uv run aws-google-auth -p work -I C01abc234 -S 123456789012 -R ap-south-1 --browser-capture --firefox-executable /usr/bin/firefox
+    uv run aws-google-auth -p work -I C01abc234 -S 123456789012 -R ap-south-1 --browser-capture
 
-To reuse sign-in state from an existing Firefox profile, pass the profile
-directory. The tool copies sign-in state into a temporary profile, so it does
-not close tabs from your live Firefox session:
+The Firefox on ``PATH`` and its default profile are detected automatically.
+The tool copies sign-in state from that profile into a temporary profile, so
+it does not close tabs from your live Firefox session, and deletes the copy
+once the capture finishes. Copies left by a capture that was killed are
+removed by the next run. Use ``--firefox-executable`` and
+``--firefox-profile`` to pick a different Firefox or profile.
+
+Values from earlier runs are saved to the profile in ``~/.aws/config``. A
+profile that has not set the IdP ID, SP ID, username, duration or region yet
+takes it from ``[default]``, or from the other Google profiles when they all
+use the same value, so once one profile is set up the others only need
+``-p``:
 
 .. code:: shell
 
-    uv run aws-google-auth -p work -I C01abc234 -S 123456789012 -R ap-south-1 --browser-capture --firefox-executable /usr/bin/firefox --firefox-profile ~/.mozilla/firefox/your-profile.default-release
+    uv run aws-google-auth -p sandbox --browser-capture
 
 This mode talks directly to geckodriver with the W3C WebDriver HTTP protocol
 and requires Firefox plus geckodriver. Install geckodriver and make sure it is
