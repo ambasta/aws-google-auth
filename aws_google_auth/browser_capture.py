@@ -1,3 +1,4 @@
+import configparser
 import json
 import os
 import re
@@ -5,6 +6,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import zipfile
@@ -85,6 +87,97 @@ def select_browser_capture_temp_root():
             ", ".join(checked),
         )
     )
+
+
+FIREFOX_EXECUTABLE_NAMES = ("firefox", "firefox-esr", "firefox-bin")
+FIREFOX_EXECUTABLE_PATHS = (
+    "/Applications/Firefox.app/Contents/MacOS/firefox",
+    r"C:\Program Files\Mozilla Firefox\firefox.exe",
+    r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+)
+
+
+def find_firefox_executable():
+    for name in FIREFOX_EXECUTABLE_NAMES:
+        path = shutil.which(name)
+        if path:
+            return path
+
+    for path in FIREFOX_EXECUTABLE_PATHS:
+        if Path(path).is_file():
+            return path
+
+    return None
+
+
+def firefox_profile_roots():
+    home = Path.home()
+    if sys.platform == "darwin":
+        return [home / "Library" / "Application Support" / "Firefox"]
+    if os.name == "nt":
+        app_data = os.environ.get("APPDATA") or (home / "AppData" / "Roaming")
+        return [Path(app_data) / "Mozilla" / "Firefox"]
+
+    # Firefox keeps using ~/.mozilla when it exists and only falls back to
+    # the XDG location for fresh installs.
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME") or (home / ".config")
+    return [
+        home / ".mozilla" / "firefox",
+        Path(xdg_config_home) / "mozilla" / "firefox",
+    ]
+
+
+def read_firefox_ini(path):
+    parser = configparser.RawConfigParser(strict=False)
+    try:
+        parser.read(path, encoding="utf-8")
+    except (OSError, configparser.Error):
+        pass
+    return parser
+
+
+def default_firefox_profile_candidates(root):
+    installs = read_firefox_ini(root / "installs.ini")
+    profiles = read_firefox_ini(root / "profiles.ini")
+    candidates = []
+
+    # Since Firefox 67 each installation records the profile it opens by
+    # default; profiles.ini may carry the same data as [Install<hash>].
+    for section in installs.sections():
+        candidates.append((installs.get(section, "Default", fallback=None), True))
+    for section in profiles.sections():
+        if section.startswith("Install"):
+            candidates.append((profiles.get(section, "Default", fallback=None), True))
+
+    profile_sections = [
+        section for section in profiles.sections() if section.startswith("Profile")
+    ]
+    for section in profile_sections:
+        if profiles.get(section, "Default", fallback=None) == "1":
+            candidates.append((
+                profiles.get(section, "Path", fallback=None),
+                profiles.get(section, "IsRelative", fallback="1") == "1",
+            ))
+    for name in ("default-release", "default"):
+        for section in profile_sections:
+            if profiles.get(section, "Name", fallback=None) == name:
+                candidates.append((
+                    profiles.get(section, "Path", fallback=None),
+                    profiles.get(section, "IsRelative", fallback="1") == "1",
+                ))
+
+    for path, is_relative in candidates:
+        if path:
+            yield root / path if is_relative else Path(path)
+
+
+def find_default_firefox_profile(roots=None):
+    for root in roots or firefox_profile_roots():
+        for candidate in default_firefox_profile_candidates(Path(root)):
+            if candidate.is_dir():
+                return str(candidate)
+
+    return None
 
 
 FIREFOX_PROFILE_CLONE_FILES = {

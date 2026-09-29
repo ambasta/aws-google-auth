@@ -42,6 +42,67 @@ class TestBrowserCapture(unittest.TestCase):
             selected,
         )
 
+    def make_firefox_root(self, installs=None, profiles=None, profile_dirs=()):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        if installs is not None:
+            (root / "installs.ini").write_text(installs)
+        if profiles is not None:
+            (root / "profiles.ini").write_text(profiles)
+        for profile_dir in profile_dirs:
+            (root / profile_dir).mkdir()
+        return root
+
+    def test_default_firefox_profile_uses_install_default(self):
+        root = self.make_firefox_root(
+            installs="[11457493C5A56847]\nDefault=new.default-release\nLocked=1\n",
+            profiles=(
+                "[Profile0]\nName=old\nIsRelative=1\nPath=old.default\nDefault=1\n"
+                "[Profile1]\nName=default-release\nIsRelative=1\nPath=new.default-release\n"
+            ),
+            profile_dirs=("old.default", "new.default-release"),
+        )
+
+        self.assertEqual(
+            str(root / "new.default-release"),
+            browser_capture.find_default_firefox_profile([root]),
+        )
+
+    def test_default_firefox_profile_falls_back_to_profiles_ini(self):
+        root = self.make_firefox_root(
+            installs="[11457493C5A56847]\nDefault=missing.default-release\n",
+            profiles=(
+                "[General]\nStartWithLastProfile=1\n"
+                "[Profile0]\nName=work\nIsRelative=1\nPath=work.profile\nDefault=1\n"
+            ),
+            profile_dirs=("work.profile",),
+        )
+
+        self.assertEqual(
+            str(root / "work.profile"),
+            browser_capture.find_default_firefox_profile([root]),
+        )
+
+    def test_default_firefox_profile_checks_each_root(self):
+        empty_root = self.make_firefox_root()
+        xdg_root = self.make_firefox_root(
+            profiles="[Profile0]\nName=default-release\nIsRelative=1\nPath=x.default-release\n",
+            profile_dirs=("x.default-release",),
+        )
+
+        self.assertEqual(
+            str(xdg_root / "x.default-release"),
+            browser_capture.find_default_firefox_profile([empty_root, xdg_root]),
+        )
+        self.assertIsNone(browser_capture.find_default_firefox_profile([empty_root]))
+
+    @patch('aws_google_auth.browser_capture.shutil.which', spec=True)
+    def test_find_firefox_executable_searches_path(self, mock_which):
+        mock_which.side_effect = lambda name: "/usr/bin/firefox-esr" if name == "firefox-esr" else None
+
+        self.assertEqual("/usr/bin/firefox-esr", browser_capture.find_firefox_executable())
+
     def test_firefox_webdriver_defaults_to_browser_capture_timeout(self):
         driver = browser_capture.FirefoxWebDriver()
 

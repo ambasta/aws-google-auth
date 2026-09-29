@@ -42,8 +42,8 @@ def parse_args(args):
     browser_group.add_argument('--browser', action='store_true', help='Open Google SSO in a browser and prompt for a copied SAMLResponse.')
     browser_group.add_argument('--browser-capture', action='store_true', help='Use Firefox to capture the browser SAMLResponse automatically.')
     parser.add_argument('--browser-timeout', type=int, default=600, help='Seconds to wait for browser SAML capture.')
-    parser.add_argument('--firefox-executable', help='Path to a Firefox executable for --browser-capture.')
-    parser.add_argument('--firefox-profile', help='Path to a Firefox profile directory to copy for --browser-capture.')
+    parser.add_argument('--firefox-executable', help='Path to a Firefox executable for --browser-capture (defaults to the Firefox on $PATH).')
+    parser.add_argument('--firefox-profile', help='Path to a Firefox profile directory to copy for --browser-capture (defaults to Firefox\'s default profile).')
     parser.add_argument('--geckodriver-executable', default='geckodriver', help='Path to geckodriver for --browser-capture.')
     parser.add_argument('--no-cache', dest="saml_cache", action='store_false', help='Do not cache the SAML Assertion.')
     parser.add_argument('--print-creds', action='store_true', help='Print Credentials.')
@@ -124,6 +124,15 @@ def capture_browser_saml_assertion(
     geckodriver_executable='geckodriver',
 ):
     from aws_google_auth import browser_capture
+
+    if firefox_executable is None:
+        firefox_executable = browser_capture.find_firefox_executable()
+    if firefox_profile is None:
+        firefox_profile = browser_capture.find_default_firefox_profile()
+        if firefox_profile:
+            print("Using the default Firefox profile: {}".format(firefox_profile))
+        else:
+            print("No Firefox profile found; Google sign-in will start from a fresh profile.")
 
     login_url = google.Google(config, save_failure=False).login_url
 

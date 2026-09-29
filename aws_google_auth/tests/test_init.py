@@ -1,7 +1,7 @@
 import unittest
 from argparse import Namespace
 
-from unittest.mock import call, patch, Mock, MagicMock
+from unittest.mock import ANY, call, patch, Mock, MagicMock
 
 import aws_google_auth
 
@@ -123,6 +123,29 @@ class TestInit(unittest.TestCase):
                   geckodriver_executable="/usr/bin/geckodriver",
                   google_username="user@example.com")],
             mock_capture.mock_calls,
+        )
+
+    @patch('aws_google_auth.browser_capture.find_default_firefox_profile', spec=True)
+    @patch('aws_google_auth.browser_capture.find_firefox_executable', spec=True)
+    @patch('aws_google_auth.browser_capture.capture_saml_response_with_firefox', spec=True)
+    def test_capture_browser_saml_assertion_detects_firefox(self, mock_capture, mock_executable, mock_profile):
+        mock_config = Mock()
+        mock_config.idp_id = "idp"
+        mock_config.sp_id = "sp"
+        mock_config.username = "user@example.com"
+        mock_capture.return_value = "YWJjZA=="
+        mock_executable.return_value = "/usr/bin/firefox"
+        mock_profile.return_value = "/home/me/.mozilla/firefox/abc.default-release"
+
+        aws_google_auth.capture_browser_saml_assertion(mock_config, timeout_seconds=30)
+
+        mock_capture.assert_called_once_with(
+            ANY,
+            timeout_seconds=30,
+            executable_path="/usr/bin/firefox",
+            profile_path="/home/me/.mozilla/firefox/abc.default-release",
+            geckodriver_executable="geckodriver",
+            google_username="user@example.com",
         )
 
     @patch('aws_google_auth.util', spec=True)
