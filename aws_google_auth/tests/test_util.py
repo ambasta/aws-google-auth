@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
 import unittest
-
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from aws_google_auth import util
 

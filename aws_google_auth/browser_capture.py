@@ -17,7 +17,6 @@ from urllib import parse as urllib_parse
 
 import requests
 
-
 ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
 DEFAULT_BROWSER_TIMEOUT_SECONDS = 600
 WEBDRIVER_STATUS_TIMEOUT_SECONDS = 0.2
@@ -157,11 +156,9 @@ def exit_cleanly_on_termination():
         signal_number = getattr(signal, name, None)
         if signal_number is None:
             continue
-        try:
+        # Signal handlers can only be installed from the main thread.
+        with contextlib.suppress(ValueError):
             previous_handlers[signal_number] = signal.signal(signal_number, terminate)
-        except ValueError:
-            # Signal handlers can only be installed from the main thread.
-            pass
 
     try:
         yield
@@ -210,10 +207,8 @@ def firefox_profile_roots():
 
 def read_firefox_ini(path):
     parser = configparser.RawConfigParser(strict=False)
-    try:
+    with contextlib.suppress(OSError, configparser.Error):
         parser.read(path, encoding="utf-8")
-    except OSError, configparser.Error:
-        pass
     return parser
 
 
@@ -575,12 +570,12 @@ def css_string_literal(value):
 def xpath_string_literal(value):
     value = str(value)
     if "'" not in value:
-        return "'{}'".format(value)
+        return f"'{value}'"
     if '"' not in value:
-        return '"{}"'.format(value)
+        return f'"{value}"'
 
     parts = value.split("'")
-    return "concat({})".format(', "\'", '.join("'{}'".format(part) for part in parts))
+    return "concat({})".format(', "\'", '.join(f"'{part}'" for part in parts))
 
 
 def click_google_account_if_present(driver, google_username):
@@ -593,8 +588,8 @@ def click_google_account_if_present(driver, google_username):
 
     css_username = css_string_literal(username)
     for selector in (
-        "[data-identifier={}]".format(css_username),
-        "[data-email={}]".format(css_username),
+        f"[data-identifier={css_username}]",
+        f"[data-email={css_username}]",
     ):
         try:
             element_id = driver.find_element(selector)
@@ -605,10 +600,10 @@ def click_google_account_if_present(driver, google_username):
 
     xpath_username = xpath_string_literal(username)
     for xpath in (
-        "//*[@data-identifier={}]".format(xpath_username),
-        "//*[@data-email={}]".format(xpath_username),
-        "//*[normalize-space()={}]/ancestor::*[@role='link' or @role='button'][1]".format(xpath_username),
-        "//*[contains(normalize-space(), {})]/ancestor::*[@role='link' or @role='button'][1]".format(xpath_username),
+        f"//*[@data-identifier={xpath_username}]",
+        f"//*[@data-email={xpath_username}]",
+        f"//*[normalize-space()={xpath_username}]/ancestor::*[@role='link' or @role='button'][1]",
+        f"//*[contains(normalize-space(), {xpath_username})]/ancestor::*[@role='link' or @role='button'][1]",
     ):
         try:
             element_id = driver.find_element_by_xpath(xpath)
@@ -636,7 +631,7 @@ def clone_firefox_profile(source_path, target_path, progress=None):
     target = Path(target_path)
 
     if not source.is_dir():
-        raise WebDriverError("Firefox profile does not exist: {}".format(source))
+        raise WebDriverError(f"Firefox profile does not exist: {source}")
 
     target.mkdir(parents=True)
     copied_items = 0
@@ -652,14 +647,14 @@ def clone_firefox_profile(source_path, target_path, progress=None):
         name = source_item.name
         is_profile_file = name in FIREFOX_PROFILE_CLONE_FILES
         is_sqlite_companion = any(
-            name == "{}{}".format(file_name, suffix)
+            name == f"{file_name}{suffix}"
             for file_name in FIREFOX_PROFILE_CLONE_FILES
             for suffix in FIREFOX_PROFILE_SQLITE_SUFFIXES
         )
         if is_profile_file or is_sqlite_companion:
             shutil.copy2(source_item, target / name)
             copied_items += 1
-            report("Copied Firefox profile item {}: {}".format(copied_items, name))
+            report(f"Copied Firefox profile item {copied_items}: {name}")
 
     copied_items += copy_firefox_site_storage(source, target, progress=progress)
 
@@ -673,7 +668,7 @@ def clone_firefox_profile(source_path, target_path, progress=None):
         prefs.write('user_pref("browser.sessionstore.resume_session_once", false);\n')
         prefs.write('user_pref("browser.sessionstore.resume_from_crash", false);\n')
 
-    report("Firefox profile copy complete: {} item(s).".format(copied_items))
+    report(f"Firefox profile copy complete: {copied_items} item(s).")
     return str(target)
 
 
@@ -696,7 +691,7 @@ def copy_firefox_site_storage(source, target, progress=None):
         target_area = target / "storage" / storage_area
         for origin in source_area.iterdir():
             if origin.is_dir() and should_copy_firefox_storage_origin(origin.name):
-                report("Copying Firefox site storage: {}".format(origin.name))
+                report(f"Copying Firefox site storage: {origin.name}")
                 shutil.copytree(origin, target_area / origin.name)
                 copied_items += 1
 
@@ -721,11 +716,8 @@ def unwrap_webdriver_response(response):
 
     value = payload.get("value")
     if response.status_code >= 400:
-        if isinstance(value, dict):
-            message = value.get("message") or value.get("error") or str(value)
-        else:
-            message = str(value)
-        raise WebDriverError(message)
+        details = value if isinstance(value, dict) else {}
+        raise WebDriverError(details.get("message") or details.get("error") or str(value))
 
     return value
 
@@ -741,7 +733,7 @@ class FirefoxWebDriver:
         self.request_timeout_seconds = request_timeout_seconds
         self.temp_directory = temp_directory
         self.port = find_free_port()
-        self.base_url = "http://127.0.0.1:{}".format(self.port)
+        self.base_url = f"http://127.0.0.1:{self.port}"
         self.process = None
         self.session_id = None
         self.request_deadline = None
@@ -750,7 +742,8 @@ class FirefoxWebDriver:
         self.process_group_id = None
 
     def start(self):
-        self.log_file = tempfile.TemporaryFile(
+        # Closed in quit(), once geckodriver has exited.
+        self.log_file = tempfile.TemporaryFile(  # noqa: SIM115
             mode="w+t",
             encoding="utf-8",
             dir=self.temp_directory,
@@ -855,28 +848,28 @@ class FirefoxWebDriver:
     def install_addon(self, path):
         self.request(
             "POST",
-            "/session/{}/moz/addon/install".format(self.session_id),
+            f"/session/{self.session_id}/moz/addon/install",
             {"path": str(path), "temporary": True},
         )
 
     def set_window_rect(self, x=0, y=0, width=1280, height=900):
         self.request(
             "POST",
-            "/session/{}/window/rect".format(self.session_id),
+            f"/session/{self.session_id}/window/rect",
             {"x": x, "y": y, "width": width, "height": height},
         )
 
     def get(self, url):
-        self.request("POST", "/session/{}/url".format(self.session_id), {"url": url})
+        self.request("POST", f"/session/{self.session_id}/url", {"url": url})
 
     @property
     def current_url(self):
-        return self.request("GET", "/session/{}/url".format(self.session_id))
+        return self.request("GET", f"/session/{self.session_id}/url")
 
     def find_element_by(self, using, value):
         value = self.request(
             "POST",
-            "/session/{}/element".format(self.session_id),
+            f"/session/{self.session_id}/element",
             {"using": using, "value": value},
         )
         return value[ELEMENT_KEY]
@@ -890,24 +883,24 @@ class FirefoxWebDriver:
     def click_element(self, element_id):
         return self.request(
             "POST",
-            "/session/{}/element/{}/click".format(self.session_id, element_id),
+            f"/session/{self.session_id}/element/{element_id}/click",
             {},
         )
 
     def get_element_attribute(self, element_id, attribute_name):
         return self.request(
             "GET",
-            "/session/{}/element/{}/attribute/{}".format(self.session_id, element_id, attribute_name),
+            f"/session/{self.session_id}/element/{element_id}/attribute/{attribute_name}",
         )
 
     def get_element_property(self, element_id, property_name):
         return self.request(
             "GET",
-            "/session/{}/element/{}/property/{}".format(self.session_id, element_id, property_name),
+            f"/session/{self.session_id}/element/{element_id}/property/{property_name}",
         )
 
     def title(self):
-        return self.request("GET", "/session/{}/title".format(self.session_id))
+        return self.request("GET", f"/session/{self.session_id}/title")
 
     def signal_process(self, signal_number, force=False):
         if self.process_group_id is not None and hasattr(os, "killpg"):
@@ -941,24 +934,20 @@ class FirefoxWebDriver:
             self.process.wait(timeout=WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             self.signal_process(WEBDRIVER_FORCE_KILL_SIGNAL, force=True)
-            try:
+            with contextlib.suppress(subprocess.TimeoutExpired):
                 self.process.wait(timeout=WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS)
-            except subprocess.TimeoutExpired:
-                pass
         self.process = None
         self.process_group_id = None
 
     def quit(self):
         self.request_deadline = None
         if self.session_id and not self.request_failed:
-            try:
+            with contextlib.suppress(requests.RequestException, WebDriverError):
                 self.request(
                     "DELETE",
-                    "/session/{}".format(self.session_id),
+                    f"/session/{self.session_id}",
                     timeout_seconds=WEBDRIVER_QUIT_TIMEOUT_SECONDS,
                 )
-            except requests.RequestException, WebDriverError:
-                pass
         self.session_id = None
 
         self.stop_process()
@@ -979,17 +968,13 @@ def capture_saml_response_with_firefox(
     removed = remove_orphaned_capture_directories()
     if removed:
         print(
-            "Removed {} temporary Firefox profile(s) left by earlier captures.".format(
-                removed,
-            ),
+            f"Removed {removed} temporary Firefox profile(s) left by earlier captures.",
             flush=True,
         )
     temp_root = select_browser_capture_temp_root()
     if Path(temp_root) != Path(tempfile.gettempdir()):
         print(
-            "Default temporary filesystem lacks free space; using {}.".format(
-                temp_root,
-            ),
+            f"Default temporary filesystem lacks free space; using {temp_root}.",
             flush=True,
         )
     driver = FirefoxWebDriver(
@@ -1064,7 +1049,7 @@ def capture_saml_response_with_firefox(
                             title = ""
                         # The captured page's fragment holds the SAMLResponse.
                         page_url = urllib_parse.urldefrag(current_url).url
-                        print("Waiting for SAMLResponse; current page: {} {}".format(title, page_url), flush=True)
+                        print(f"Waiting for SAMLResponse; current page: {title} {page_url}", flush=True)
                         last_url = current_url
                         next_status_at = now + 10
 
@@ -1094,9 +1079,7 @@ def capture_saml_response_with_firefox(
                         if clicked_google_account:
                             google_account_click_requested = True
                             print(
-                                "Requested Google account selection: {}".format(
-                                    google_username,
-                                ),
+                                f"Requested Google account selection: {google_username}",
                                 flush=True,
                             )
 
@@ -1114,15 +1097,12 @@ def capture_saml_response_with_firefox(
                         if google_account_chooser_reloads >= reload_limit:
                             raise WebDriverError(
                                 "Google account chooser did not advance after "
-                                "selecting {}. Close the capture window and retry.".format(google_username)
+                                f"selecting {google_username}. Close the capture window and retry."
                             )
 
                         google_account_chooser_reloads += 1
                         print(
-                            "Google account chooser did not advance; reloading the SSO page (attempt {}/{}).".format(
-                                google_account_chooser_reloads,
-                                GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT,
-                            ),
+                            f"Google account chooser did not advance; reloading the SSO page (attempt {google_account_chooser_reloads}/{GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT}).",
                             flush=True,
                         )
                         driver.get(login_url)
@@ -1147,5 +1127,5 @@ def capture_saml_response_with_firefox(
     except (OSError, requests.RequestException, WebDriverError) as ex:
         raise RuntimeError(
             "Could not launch Firefox through geckodriver WebDriver. Ensure Firefox is installed "
-            "and geckodriver is available on PATH. Details: {}".format(ex)
+            f"and geckodriver is available on PATH. Details: {ex}"
         ) from ex

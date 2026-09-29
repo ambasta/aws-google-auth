@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 
+import os
 import unittest
+from os import path
 from unittest import mock
 
-from aws_google_auth import amazon
-from aws_google_auth import configuration
-from os import path
-import os
+from aws_google_auth import amazon, configuration
 
 
 class TestAmazon(unittest.TestCase):

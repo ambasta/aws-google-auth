@@ -4,11 +4,10 @@ import os
 import botocore.session
 import filelock
 
-from aws_google_auth import util
-from aws_google_auth import amazon
+from aws_google_auth import amazon, util
 
 
-class Configuration(object):
+class Configuration:
     def __init__(self, **kwargs):
         self.options = {}
         self.__boto_session = botocore.session.Session()
@@ -43,7 +42,7 @@ class Configuration(object):
         if str(profile).lower() == "default":
             return profile
         else:
-            return "profile {}".format(str(profile))
+            return f"profile {profile!s}"
 
     @property
     def max_duration(self):
@@ -59,7 +58,7 @@ class Configuration(object):
 
     @property
     def saml_cache_file(self):
-        return self.credentials_file.replace("credentials", "saml_cache_%s.xml" % self.idp_id)
+        return self.credentials_file.replace("credentials", f"saml_cache_{self.idp_id}.xml")
 
     def ensure_config_files_exist(self):
         for file in [self.config_file, self.credentials_file]:
@@ -90,38 +89,28 @@ class Configuration(object):
     # configuration.
     def raise_if_invalid(self):
         # ask_role
-        assert self.ask_role.__class__ is bool, "Expected ask_role to be a boolean. Got {}.".format(
-            self.ask_role.__class__
-        )
+        assert self.ask_role.__class__ is bool, f"Expected ask_role to be a boolean. Got {self.ask_role.__class__}."
 
         # keyring
-        assert self.keyring.__class__ is bool, "Expected keyring to be a boolean. Got {}.".format(
-            self.keyring.__class__
-        )
+        assert self.keyring.__class__ is bool, f"Expected keyring to be a boolean. Got {self.keyring.__class__}."
 
         # duration
-        assert self.duration.__class__ is int, "Expected duration to be an integer. Got {}.".format(
-            self.duration.__class__
-        )
-        assert self.duration >= 900, "Expected duration to be greater than or equal to 900. Got {}.".format(
-            self.duration
-        )
+        assert self.duration.__class__ is int, f"Expected duration to be an integer. Got {self.duration.__class__}."
+        assert self.duration >= 900, f"Expected duration to be greater than or equal to 900. Got {self.duration}."
         assert self.duration <= self.max_duration, (
-            "Expected duration to be less than or equal to max_duration ({}). Got {}.".format(
-                self.max_duration, self.duration
-            )
+            f"Expected duration to be less than or equal to max_duration ({self.max_duration}). Got {self.duration}."
         )
 
         # auto_duration
-        assert self.auto_duration.__class__ is bool, "Expected auto_duration to be a boolean. Got {}.".format(
-            self.auto_duration.__class__
+        assert self.auto_duration.__class__ is bool, (
+            f"Expected auto_duration to be a boolean. Got {self.auto_duration.__class__}."
         )
 
         # profile
-        assert self.profile.__class__ is str, "Expected profile to be a string. Got {}.".format(self.profile.__class__)
+        assert self.profile.__class__ is str, f"Expected profile to be a string. Got {self.profile.__class__}."
 
         # region
-        assert self.region.__class__ is str, "Expected region to be a string. Got {}.".format(self.region.__class__)
+        assert self.region.__class__ is str, f"Expected region to be a string. Got {self.region.__class__}."
 
         # idp_id
         assert self.idp_id is not None, "Expected idp_id to be set to non-None value."
@@ -130,37 +119,35 @@ class Configuration(object):
         assert self.sp_id is not None, "Expected sp_id to be set to non-None value."
 
         # username
-        assert self.username.__class__ is str, "Expected username to be a string. Got {}.".format(
-            self.username.__class__
-        )
+        assert self.username.__class__ is str, f"Expected username to be a string. Got {self.username.__class__}."
 
         # password
-        assert type(self.password) is str, "Expected password to be a string. Got {}.".format(type(self.password))
+        assert type(self.password) is str, f"Expected password to be a string. Got {type(self.password)}."
 
         # role_arn (Can be blank, we'll just prompt)
         if self.role_arn is not None:
-            assert self.role_arn.__class__ is str, "Expected role_arn to be None or a string. Got {}.".format(
-                self.role_arn.__class__
+            assert self.role_arn.__class__ is str, (
+                f"Expected role_arn to be None or a string. Got {self.role_arn.__class__}."
             )
             assert "arn:aws:iam::" in self.role_arn or "arn:aws-us-gov:iam::" in self.role_arn, (
-                "Expected role_arn to contain 'arn:aws:iam::'. Got '{}'.".format(self.role_arn)
+                f"Expected role_arn to contain 'arn:aws:iam::'. Got '{self.role_arn}'."
             )
 
         # u2f_disabled
-        assert self.u2f_disabled.__class__ is bool, "Expected u2f_disabled to be a boolean. Got {}.".format(
-            self.u2f_disabled.__class__
+        assert self.u2f_disabled.__class__ is bool, (
+            f"Expected u2f_disabled to be a boolean. Got {self.u2f_disabled.__class__}."
         )
 
         # quiet
-        assert self.quiet.__class__ is bool, "Expected quiet to be a boolean. Got {}.".format(self.quiet.__class__)
+        assert self.quiet.__class__ is bool, f"Expected quiet to be a boolean. Got {self.quiet.__class__}."
 
         # account
-        assert self.account.__class__ is str, "Expected account to be string. Got {}".format(self.account.__class__)
+        assert self.account.__class__ is str, f"Expected account to be string. Got {self.account.__class__}"
 
         # firefox_profile
         if self.firefox_profile is not None:
             assert self.firefox_profile.__class__ is str, (
-                "Expected firefox_profile to be None or a string. Got {}.".format(self.firefox_profile.__class__)
+                f"Expected firefox_profile to be None or a string. Got {self.firefox_profile.__class__}."
             )
 
     # Write the configuration (and credentials) out to disk. This allows for
@@ -328,7 +315,7 @@ class Configuration(object):
 
         # SAML Cache
         try:
-            with open(self.saml_cache_file, "r") as f:
+            with open(self.saml_cache_file) as f:
                 self.__saml_cache = f.read().encode("utf-8")
-        except IOError:
+        except OSError:
             pass

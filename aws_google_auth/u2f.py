@@ -4,7 +4,7 @@ import json
 import time
 
 import requests
-from u2flib_host import u2f, exc, appid
+from u2flib_host import appid, exc, u2f
 from u2flib_host.constants import APDU_USE_NOT_SATISFIED
 
 """
@@ -45,12 +45,12 @@ def u2f_auth(challenges, facet):
     for device in devices[:]:
         try:
             device.open()
-        except:
+        except Exception:
             # Some U2F devices fail on the first attempt to open but
             # succeed on subsequent attempts. So retry once.
             try:
                 device.open()
-            except:
+            except Exception:
                 devices.remove(device)
 
     try:

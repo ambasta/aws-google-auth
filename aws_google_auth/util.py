@@ -33,10 +33,7 @@ class Util:
 
     @staticmethod
     def pick_a_role(roles, aliases=None, account=None):
-        if account:
-            filtered_roles = {role: principal for role, principal in roles.items() if (account in role)}
-        else:
-            filtered_roles = roles
+        filtered_roles = {role: principal for role, principal in roles.items() if account in role} if account else roles
 
         if aliases:
             enriched_roles = {}
@@ -50,12 +47,12 @@ class Util:
                 ordered_roles[role] = role_property[2]
 
             enriched_roles_tab = []
-            for i, (role, role_property) in enumerate(enriched_roles.items()):
+            for i, role_property in enumerate(enriched_roles.values()):
                 enriched_roles_tab.append([i + 1, role_property[0], role_property[1]])
 
             while True:
                 print(Util.format_table(enriched_roles_tab, headers=["No", "AWS account", "Role"]))
-                prompt = "Type the number (1 - {:d}) of the role to assume: ".format(len(enriched_roles))
+                prompt = f"Type the number (1 - {len(enriched_roles):d}) of the role to assume: "
                 choice = Util.get_input(prompt)
 
                 try:
@@ -65,9 +62,9 @@ class Util:
         else:
             while True:
                 for i, role in enumerate(filtered_roles):
-                    print("[{:>3d}] {}".format(i + 1, role))
+                    print(f"[{i + 1:>3d}] {role}")
 
-                prompt = "Type the number (1 - {:d}) of the role to assume: ".format(len(filtered_roles))
+                prompt = f"Type the number (1 - {len(filtered_roles):d}) of the role to assume: "
                 choice = Util.get_input(prompt)
 
                 try:

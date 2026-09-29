@@ -30,7 +30,7 @@ class Amazon:
                 os.environ["AWS_PROFILE"] = profile
             return client
         except ProfileNotFound as ex:
-            raise ExpectedGoogleException("Error : {}.".format(ex))
+            raise ExpectedGoogleException(f"Error : {ex}.") from ex
 
     @property
     def base64_encoded_saml(self):
@@ -133,7 +133,7 @@ class Amazon:
                 response = iam.list_account_aliases()
                 account_alias = response["AccountAliases"][0]
                 aws_dict[role.split(":")[4]] = account_alias
-            except:
+            except Exception:
                 sts = session.create_client(
                     "sts",
                     region_name=self.config.region,
@@ -143,11 +143,11 @@ class Amazon:
                 )
 
                 account_id = sts.get_caller_identity().get("Account")
-                aws_dict[role.split(":")[4]] = "{}".format(account_id)
+                aws_dict[role.split(":")[4]] = f"{account_id}"
 
         threads = []
         aws_id_alias = {}
-        for number, (role, principal) in enumerate(roles.items()):
+        for role, principal in roles.items():
             t = Thread(target=resolve_aws_alias, args=(role, principal, aws_id_alias))
             t.start()
             threads.append(t)
@@ -172,9 +172,6 @@ class Amazon:
             not_before = datetime.strptime(not_before_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
             not_on_or_after = datetime.strptime(not_on_or_after_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
 
-            if not_before <= now < not_on_or_after:
-                return True
-            else:
-                return False
+            return not_before <= now < not_on_or_after
         except Exception:
             return False

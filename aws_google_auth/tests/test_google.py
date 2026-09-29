@@ -1,21 +1,19 @@
-# -*- coding: utf-8 -*-
-import unittest
-from io import open
-from os import path
-
-import json
 import base64
+import builtins
+import json
+import unittest
+from os import path
+from unittest.mock import Mock
 
 from bs4 import BeautifulSoup
 
-from unittest.mock import Mock
 from aws_google_auth import google
 
 
 class TestGoogle(unittest.TestCase):
     def read_local_file(self, filename):
         here = path.abspath(path.dirname(__file__))
-        with open(path.join(here, filename), encoding="utf-8") as fp:
+        with builtins.open(path.join(here, filename), encoding="utf-8") as fp:
             return fp.read().encode("utf-8")
 
     def test_extra_step(self):

@@ -1,17 +1,15 @@
-# -*- coding: utf-8 -*-
-
 import base64
 import json
 import logging
 import os
 import re
 import sys
+from datetime import datetime
+from urllib import parse as urllib_parse
 
 import requests
-from datetime import datetime
 from bs4 import BeautifulSoup
 from requests import HTTPError
-from urllib import parse as urllib_parse
 
 from aws_google_auth import _version
 
@@ -24,7 +22,7 @@ except ImportError:
 
 class ExpectedGoogleException(Exception):
     def __init__(self, *args):
-        super(ExpectedGoogleException, self).__init__(*args)
+        super().__init__(*args)
 
 
 class Google:
@@ -54,9 +52,7 @@ class Google:
 
     @property
     def login_url(self):
-        return self.base_url + "/o/saml2/initsso?idpid={}&spid={}&forceauthn=false".format(
-            self.config.idp_id, self.config.sp_id
-        )
+        return self.base_url + f"/o/saml2/initsso?idpid={self.config.idp_id}&spid={self.config.sp_id}&forceauthn=false"
 
     def check_for_failure(self, sess):
 
@@ -73,7 +69,7 @@ class Google:
             reason = sess.reason
 
         if sess.status_code == 403:
-            raise ExpectedGoogleException("{} accessing {}".format(reason, sess.url))
+            raise ExpectedGoogleException(f"{reason} accessing {sess.url}")
 
         try:
             sess.raise_for_status()
@@ -123,16 +119,16 @@ class Google:
 
         if parsed_page.find(id="identifierId"):
             raise ExpectedGoogleException(
-                "Google returned the modern JavaScript sign-in page during {} ({}). "
-                "This CLI expects Google's legacy HTML SAML form. Open this URL in a browser: {} "
+                f"Google returned the modern JavaScript sign-in page during {context} ({error_msg}). "
+                f"This CLI expects Google's legacy HTML SAML form. Open this URL in a browser: {self.login_url} "
                 "then run document.bg.invoke() in the browser console and pass the result with "
-                "--bg-response.".format(context, error_msg, self.login_url)
+                "--bg-response."
             )
 
         raise ExpectedGoogleException(
-            "Google did not return the expected SAML login form during {} ({}). "
+            f"Google did not return the expected SAML login form during {context} ({error_msg}). "
             "Check GOOGLE_IDP_ID and GOOGLE_SP_ID; remove any extra spaces. "
-            "Use --save-failure-html to save the response for debugging.".format(context, error_msg)
+            "Use --save-failure-html to save the response for debugging."
         )
 
     def post(self, url, data=None, json_data=None):
@@ -184,18 +180,16 @@ class Google:
     @staticmethod
     def find_key_handles(input, challengeTxt):
         keyHandles = []
-        typeOfInput = type(input)
-        if typeOfInput == dict:  # parse down a dict
+        if isinstance(input, dict):  # parse down a dict
             for item in input:
                 keyHandles.extend(Google.find_key_handles(input[item], challengeTxt))
 
-        elif typeOfInput == list:  # looks like we've hit an array - iterate it
+        elif isinstance(input, list):  # looks like we've hit an array - iterate it
             array = list(filter(None, input))  # remove any None type objects from the array
             for item in array:
-                typeValue = type(item)
-                if typeValue == list:  # another array - recursive call
+                if isinstance(item, list):  # another array - recursive call
                     keyHandles.extend(Google.find_key_handles(item, challengeTxt))
-                elif typeValue == int or typeValue == bool:  # ints bools etc we don't care
+                elif isinstance(item, int):  # ints bools etc we don't care
                     continue
                 else:  # we went a string or unicode here (python 3.x lost unicode global)
                     try:  # keyHandle string will be base64 encoded -
@@ -203,7 +197,7 @@ class Google:
                         base64UrlEncoded = base64.urlsafe_b64encode(base64.b64decode(item))
                         if base64UrlEncoded != challengeTxt:  # make sure its not the challengeTxt - if it not return it
                             keyHandles.append(base64UrlEncoded)
-                    except:
+                    except ValueError, TypeError:
                         pass
         return keyHandles
 
@@ -213,13 +207,13 @@ class Google:
             searchResult = re.search('"appid":"[a-z://.-_] + "', inputString).group()
             searchObject = json.loads("{" + searchResult + "}")
             return str(searchObject["appid"])
-        except:
+        except Exception:
             logging.exception("Was unable to find appid value in googles SAML page")
             sys.exit(1)
 
     def do_login(self):
         self.session = requests.Session()
-        self.session.headers["User-Agent"] = "AWS Sign-in/{} (aws-google-auth)".format(self.version)
+        self.session.headers["User-Agent"] = f"AWS Sign-in/{self.version} (aws-google-auth)"
         sess = self.get(self.login_url)
 
         # Collect information from the page source
@@ -248,10 +242,10 @@ class Google:
         if self.config.bg_response:
             payload["bgresponse"] = self.config.bg_response
 
-        if payload.get("PersistentCookie", None) is not None:
+        if payload.get("PersistentCookie") is not None:
             payload["PersistentCookie"] = "yes"
 
-        if payload.get("TrustDevice", None) is not None:
+        if payload.get("TrustDevice") is not None:
             payload["TrustDevice"] = "on"
 
         # POST to account login info page, to collect profile and session info
@@ -301,9 +295,9 @@ class Google:
 
         if "signin/rejected" in sess.url:
             raise ExpectedGoogleException(
-                """Default value of parameter `bgresponse` has not accepted.
-                Please visit login URL {}, open the web inspector and execute document.bg.invoke() in the console.
-                Then, set --bg-response to the function output.""".format(self.login_url)
+                f"""Default value of parameter `bgresponse` has not accepted.
+                Please visit login URL {self.login_url}, open the web inspector and execute document.bg.invoke() in the console.
+                Then, set --bg-response to the function output."""
             )
 
         self.check_extra_step(response_page)
@@ -348,10 +342,10 @@ class Google:
 
     @staticmethod
     def check_extra_step(response):
-        extra_step = response.find(string="This extra step shows that it’s really you trying to sign in")
-        if extra_step:
-            if response.find(id="contactAdminMessage"):
-                raise ValueError(response.find(id="contactAdminMessage").text)
+        # Google's page uses a typographic apostrophe here.
+        extra_step = response.find(string="This extra step shows that it’s really you trying to sign in")  # noqa: RUF001
+        if extra_step and response.find(id="contactAdminMessage"):
+            raise ValueError(response.find(id="contactAdminMessage").text)
 
     def parse_saml(self):
         if self.session_state is None:
@@ -360,7 +354,7 @@ class Google:
         parsed = BeautifulSoup(self.session_state.text, "html.parser")
         try:
             saml_element = parsed.find("input", {"name": "SAMLResponse"}).get("value")
-        except:
+        except AttributeError as ex:
             if self.save_failure:
                 logging.error("SAML lookup failed, storing failure page to 'saml.html' to assist with debugging.")
                 with open("saml.html", "wb") as out:
@@ -368,7 +362,7 @@ class Google:
 
             raise ExpectedGoogleException(
                 "Something went wrong - Could not find SAML response, check your credentials or use --save-failure-html to debug."
-            )
+            ) from ex
 
         return base64.b64decode(saml_element)
 
@@ -392,9 +386,7 @@ class Google:
 
         # txt sent for signing needs to be base64 url encode
         # we also have to remove any base64 padding because including including it will prevent google accepting the auth response
-        challenges_txt_encode_pad_removed = base64.urlsafe_b64encode(base64.b64decode(challenges_txt)).strip(
-            "=".encode()
-        )
+        challenges_txt_encode_pad_removed = base64.urlsafe_b64encode(base64.b64decode(challenges_txt)).strip(b"=")
 
         u2f_challenges = [
             {
@@ -461,10 +453,7 @@ class Google:
 
         payload["Pin"] = sms_token
 
-        try:
-            del payload["SendMethod"]
-        except KeyError:
-            pass
+        payload.pop("SendMethod", None)
 
         # Submit IPP (SMS code)
         return self.post(challenge_url, data=payload)
@@ -477,7 +466,7 @@ class Google:
         data_tx_id = response_page.find("div", {"data-tx-id": True}).get("data-tx-id")
 
         # Need to post this to the verification/pause endpoint
-        await_url = "https://content.googleapis.com/cryptauth/v1/authzen/awaittx?alt=json&key={}".format(data_key)
+        await_url = f"https://content.googleapis.com/cryptauth/v1/authzen/awaittx?alt=json&key={data_key}"
         await_body = {"txId": data_tx_id}
 
         self.check_prompt_code(response_page)
@@ -524,7 +513,7 @@ class Google:
         """
         num_code = response.find("div", {"jsname": "EKvSSd"})
         if num_code:
-            print("numerical code for prompt: {}".format(num_code.string))
+            print(f"numerical code for prompt: {num_code.string}")
 
     def handle_totp(self, sess):
         response_page = BeautifulSoup(sess.text, "html.parser")
@@ -536,7 +525,7 @@ class Google:
         mfa_token = input("MFA token: ") or None
 
         if not mfa_token:
-            raise ValueError("MFA token required for {} but none supplied.".format(self.config.username))
+            raise ValueError(f"MFA token required for {self.config.username} but none supplied.")
 
         payload = {
             "challengeId": challenge_id,
@@ -653,7 +642,7 @@ class Google:
 
         print("Choose MFA method from available:")
         for i, mfa in enumerate(challenges, start=1):
-            print("{}: {}".format(i, mfa[0]))
+            print(f"{i}: {mfa[0]}")
 
         selected_challenge = input("Enter MFA choice number (1): ") or None
 
@@ -663,7 +652,7 @@ class Google:
             selected_challenge = 0
 
         challenge_id = challenges[selected_challenge][1]
-        print("MFA Type Chosen: {}".format(challenges[selected_challenge][0]))
+        print(f"MFA Type Chosen: {challenges[selected_challenge][0]}")
 
         # We need the specific form of the challenge chosen
         challenge_form = response_page.find("form", {"data-challengeentry": challenge_id})

@@ -1,7 +1,6 @@
 import unittest
 from argparse import Namespace
-
-from unittest.mock import ANY, call, patch, Mock, MagicMock
+from unittest.mock import ANY, MagicMock, Mock, call, patch
 
 import aws_google_auth
 
@@ -11,9 +10,11 @@ class TestInit(unittest.TestCase):
         pass
 
     def test_load_keyring_explains_missing_extra(self):
-        with patch.dict("sys.modules", {"keyring": None}):
-            with self.assertRaisesRegex(aws_google_auth.google.ExpectedGoogleException, r"aws-google-auth\[keyring\]"):
-                aws_google_auth.load_keyring()
+        with (
+            patch.dict("sys.modules", {"keyring": None}),
+            self.assertRaisesRegex(aws_google_auth.google.ExpectedGoogleException, r"aws-google-auth\[keyring\]"),
+        ):
+            aws_google_auth.load_keyring()
 
     @patch("aws_google_auth.cli", spec=True)
     def test_main_method_has_no_parameters(self, mock_cli):
@@ -29,10 +30,9 @@ class TestInit(unittest.TestCase):
 
         self.assertTrue(mock_cli.called)
 
-    @patch("aws_google_auth.exit_if_unsupported_python", spec=True)
     @patch("aws_google_auth.resolve_config", spec=True)
     @patch("aws_google_auth.process_auth", spec=True)
-    def test_main_method_chaining(self, process_auth, resolve_config, exit_if_unsupported_python):
+    def test_main_method_chaining(self, process_auth, resolve_config):
 
         # Create a mock config to be returned from the resolve_config function
         mock_config = Mock()
@@ -42,11 +42,8 @@ class TestInit(unittest.TestCase):
         # Function under test
         aws_google_auth.cli([])
 
-        self.assertTrue(exit_if_unsupported_python.called)
         self.assertTrue(resolve_config.called)
         self.assertTrue(process_auth.called)
-
-        self.assertEqual([call()], exit_if_unsupported_python.mock_calls)
 
         expected_args = Namespace(
             ask_role=False,

@@ -1,20 +1,16 @@
 import argparse
 import base64
 import binascii
+import logging
 import os
 import re
 import sys
-import logging
 import webbrowser
 from urllib import parse as urllib_parse
 
 from bs4 import BeautifulSoup
 
-from aws_google_auth import _version
-from aws_google_auth import amazon
-from aws_google_auth import configuration
-from aws_google_auth import google
-from aws_google_auth import util
+from aws_google_auth import _version, amazon, configuration, google, util
 
 
 def parse_args(args):
@@ -88,18 +84,9 @@ def parse_args(args):
         default="warn",
         help="Select log level (default: %(default)s)",
     )
-    parser.add_argument(
-        "-V", "--version", action="version", version="%(prog)s {version}".format(version=_version.__version__)
-    )
+    parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {_version.__version__}")
 
     return parser.parse_args(args)
-
-
-def exit_if_unsupported_python():
-    if sys.version_info < (3, 14):
-        logging.critical("%s requires Python 3.14 or higher.", __name__)
-        logging.critical("For debugging, it appears you're running: %s", sys.version_info)
-        sys.exit(1)
 
 
 def extract_saml_assertion(assertion):
@@ -161,7 +148,7 @@ def capture_browser_saml_assertion(
     if firefox_profile is None:
         firefox_profile = browser_capture.find_default_firefox_profile()
         if firefox_profile:
-            print("Using the default Firefox profile: {}".format(firefox_profile))
+            print(f"Using the default Firefox profile: {firefox_profile}")
         else:
             print("No Firefox profile found; Google sign-in will start from a fresh profile.")
 
@@ -210,8 +197,6 @@ def load_keyring():
 
 def cli(cli_args):
     try:
-        exit_if_unsupported_python()
-
         args = parse_args(args=cli_args)
 
         config = resolve_config(args)
@@ -278,13 +263,13 @@ def resolve_config(args):
     requested_firefox_profile = strip_if_string(
         coalesce(args.firefox_profile, os.getenv("AWS_GOOGLE_AUTH_FIREFOX_PROFILE"))
     )
-    if requested_firefox_profile is None and config.firefox_profile:
-        # Firefox renames and moves profiles, so a saved path can go stale.
-        if not os.path.isdir(os.path.expanduser(config.firefox_profile)):
-            logging.warning(
-                "Saved Firefox profile %s no longer exists; using the default profile instead.", config.firefox_profile
-            )
-            config.firefox_profile = None
+    # Firefox renames and moves profiles, so a saved path can go stale.
+    saved_profile_is_stale = config.firefox_profile and not os.path.isdir(os.path.expanduser(config.firefox_profile))
+    if requested_firefox_profile is None and saved_profile_is_stale:
+        logging.warning(
+            "Saved Firefox profile %s no longer exists; using the default profile instead.", config.firefox_profile
+        )
+        config.firefox_profile = None
     config.firefox_profile = strip_if_string(coalesce(requested_firefox_profile, config.firefox_profile))
 
     config.keyring = coalesce(args.keyring, config.keyring)

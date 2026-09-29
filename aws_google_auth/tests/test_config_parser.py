@@ -1,11 +1,9 @@
 import os
 import tempfile
 import unittest
-
 from unittest import mock
 
-from aws_google_auth import resolve_config, parse_args
-
+from aws_google_auth import parse_args, resolve_config
 
 # Keep the developer's own ~/.aws/config from leaking into the defaults.
 _aws_files = None
@@ -103,7 +101,7 @@ class TestFirefoxProfileProcessing(unittest.TestCase):
 
     def write_saved_profile(self, firefox_profile):
         with open(os.environ["AWS_CONFIG_FILE"], "w") as config_file:
-            config_file.write("[profile saved]\ngoogle_config.firefox_profile = {}\n".format(firefox_profile))
+            config_file.write(f"[profile saved]\ngoogle_config.firefox_profile = {firefox_profile}\n")
         self.addCleanup(os.remove, os.environ["AWS_CONFIG_FILE"])
 
     def test_saved_profile_is_used_when_it_exists(self):
