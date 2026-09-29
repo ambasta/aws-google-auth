@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
 
 import base64
-import io
 import json
 import logging
 import os
 import re
-import shutil
 import sys
 
 import requests
-from PIL import Image
 from datetime import datetime
 from bs4 import BeautifulSoup
 from requests import HTTPError
@@ -297,9 +294,8 @@ class Google:
         error = response_page.find(class_="error-msg")
         cap = response_page.find("input", {"name": "identifier-captcha-input"})
 
-        # Were there any errors logging in? Could be invalid username or password
-        # There could also sometimes be a Captcha, which means Google thinks you,
-        # or someone using the same outbound IP address as you, is a bot.
+        # Were there any errors logging in? Could be invalid username or password,
+        # unless Google is showing a CAPTCHA, which is handled below.
         if error is not None and cap is None:
             raise ExpectedGoogleException("Invalid username or password")
 
@@ -312,26 +308,12 @@ class Google:
 
         self.check_extra_step(response_page)
 
-        # Process Google CAPTCHA verification request if present
+        # Google asks for a CAPTCHA when it thinks you, or someone sharing
+        # your IP address, is a bot. That is easier to solve in a real browser.
         if cap is not None:
-            self.session.headers["Referer"] = sess.url
-
-            sess = self.handle_captcha(sess, payload)
-
-            response_page = BeautifulSoup(sess.text, "html.parser")
-            error = response_page.find(class_="error-msg")
-            cap = response_page.find("input", {"name": "logincaptcha"})
-
-            # Were there any errors logging in? Could be invalid username or password
-            # There could also sometimes be a Captcha, which means Google thinks you,
-            # or someone using the same outbound IP address as you, is a bot.
-            if error is not None:
-                raise ExpectedGoogleException("Invalid username or password")
-
-            self.check_extra_step(response_page)
-
-            if cap is not None:
-                raise ExpectedGoogleException("Invalid captcha")
+            raise ExpectedGoogleException(
+                "Google asked for a CAPTCHA. Sign in with --browser-capture instead to solve it in Firefox."
+            )
 
         self.session.headers["Referer"] = sess.url
 
@@ -389,76 +371,6 @@ class Google:
             )
 
         return base64.b64decode(saml_element)
-
-    def handle_captcha(self, sess, payload):
-        response_page = BeautifulSoup(sess.text, "html.parser")
-
-        # Collect ProfileInformation, SessionState, signIn, and Password Challenge URL
-        profile_information = response_page.find("input", {"name": "ProfileInformation"}).get("value")
-        session_state = response_page.find("input", {"name": "SessionState"}).get("value")
-        sign_in = response_page.find("input", {"name": "signIn"}).get("value")
-        passwd_challenge_url = response_page.find("form", {"id": "gaia_loginform"}).get("action")
-
-        # Update the payload
-        payload["SessionState"] = session_state
-        payload["ProfileInformation"] = profile_information
-        payload["signIn"] = sign_in
-        payload["Passwd"] = self.config.password
-
-        # Get all captcha challenge tokens and urls
-        captcha_container = response_page.find("div", {"id": "identifier-captcha"})
-        captcha_logintoken = captcha_container.find("input", {"id": "identifier-token"}).get("value")
-        captcha_img = captcha_container.find("div", {"class": "captcha-img"})
-        captcha_url = "https://accounts.google.com" + captcha_img.find("img").get("src")
-        captcha_logintoken_audio = ""
-
-        open_image = True
-
-        # Check if there is a display utility installed as Image.open(f).show() do not raise any exception if not
-        # if neither xv or display are available just display the URL for the user to visit.
-        if os.name == "posix" and sys.platform != "darwin":
-            if shutil.which("xv") is None and shutil.which("display") is None:
-                open_image = False
-
-        print("Please visit the following URL to view your CAPTCHA: {}".format(captcha_url))
-
-        if open_image:
-            try:
-                with requests.get(captcha_url) as url:
-                    with io.BytesIO(url.content) as f:
-                        Image.open(f).show()
-            except Exception:
-                pass
-
-        captcha_input = input("Captcha (case insensitive): ") or None
-
-        # Update the payload
-        payload["identifier-captcha-input"] = captcha_input
-        payload["identifiertoken"] = captcha_logintoken
-        payload["identifiertoken_audio"] = captcha_logintoken_audio
-        payload["checkedDomains"] = "youtube"
-        payload["checkConnection"] = "youtube:574:1"
-        payload["Email"] = self.config.username
-
-        response = self.post(passwd_challenge_url, data=payload)
-
-        newPayload = {}
-
-        auth_response_page = BeautifulSoup(response.text, "html.parser")
-        form = auth_response_page.find("form")
-        for tag in form.find_all("input"):
-            if tag.get("name") is None:
-                continue
-
-            newPayload[tag.get("name")] = tag.get("value")
-
-        newPayload["Email"] = self.config.username
-        newPayload["Passwd"] = self.config.password
-
-        if newPayload.get("TrustDevice", None) is not None:
-            newPayload["TrustDevice"] = "on"
-
-        return self.post(response.url, data=newPayload)
 
     def handle_sk(self, sess):
         response_page = BeautifulSoup(sess.text, "html.parser")
