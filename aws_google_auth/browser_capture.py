@@ -1,4 +1,5 @@
 import configparser
+import contextlib
 import json
 import os
 import re
@@ -29,6 +30,9 @@ GOOGLE_ACCOUNT_CLICK_RETRY_SECONDS = 2
 GOOGLE_ACCOUNT_CHOOSER_STALL_SECONDS = 15
 GOOGLE_ACCOUNT_CHOOSER_RELOAD_LIMIT = 2
 BROWSER_CAPTURE_MINIMUM_FREE_BYTES = 256 * 1024 * 1024
+BROWSER_CAPTURE_TEMP_PREFIX = "aws-google-auth-firefox-"
+BROWSER_CAPTURE_OWNER_FILE = "owner.pid"
+BROWSER_CAPTURE_ORPHAN_AGE_SECONDS = 24 * 60 * 60
 GOOGLE_ACCOUNT_CHOOSER_PATH_PATTERN = re.compile(
     r"^/(?:AccountChooser|v\d+/signin/accountchooser)/?$",
     re.IGNORECASE,
@@ -51,24 +55,29 @@ class BrowserCaptureResult:
     aws_roles: list = field(default_factory=list)
 
 
-def select_browser_capture_temp_root():
+def browser_capture_temp_root_candidates():
     configured_root = os.environ.get("AWS_GOOGLE_AUTH_TMPDIR")
     default_root = tempfile.gettempdir()
     home_cache_root = Path.home() / ".cache" / "aws-google-auth" / "tmp"
     xdg_cache_root = Path(
         os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
     ) / "aws-google-auth" / "tmp"
-    candidates = [
+    candidates = []
+    for candidate in (
         configured_root,
         default_root,
         str(home_cache_root),
         str(xdg_cache_root),
-    ]
+    ):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def select_browser_capture_temp_root():
     checked = []
 
-    for candidate in candidates:
-        if not candidate or candidate in checked:
-            continue
+    for candidate in browser_capture_temp_root_candidates():
         checked.append(candidate)
         path = Path(candidate).expanduser()
         try:
@@ -87,6 +96,81 @@ def select_browser_capture_temp_root():
             ", ".join(checked),
         )
     )
+
+
+def process_is_running(process_id):
+    try:
+        os.kill(process_id, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def is_orphaned_capture_directory(path):
+    try:
+        owner_process_id = int((path / BROWSER_CAPTURE_OWNER_FILE).read_text())
+    except (OSError, ValueError):
+        owner_process_id = None
+
+    # os.kill() cannot probe a process on Windows without terminating it.
+    if owner_process_id is not None and owner_process_id > 0 and os.name == "posix":
+        return not process_is_running(owner_process_id)
+
+    try:
+        age_seconds = time.time() - path.stat().st_mtime
+    except OSError:
+        return False
+    return age_seconds >= BROWSER_CAPTURE_ORPHAN_AGE_SECONDS
+
+
+# Profile copies hold Google session cookies, so remove any left behind by a
+# capture that was killed before it could clean up.
+def remove_orphaned_capture_directories(temp_roots=None):
+    removed = 0
+    for root in temp_roots or browser_capture_temp_root_candidates():
+        try:
+            entries = list(Path(root).expanduser().iterdir())
+        except OSError:
+            continue
+
+        for entry in entries:
+            if not entry.name.startswith(BROWSER_CAPTURE_TEMP_PREFIX):
+                continue
+            if entry.is_symlink() or not entry.is_dir():
+                continue
+            if is_orphaned_capture_directory(entry):
+                shutil.rmtree(entry, ignore_errors=True)
+                if not entry.exists():
+                    removed += 1
+
+    return removed
+
+
+# SIGTERM and SIGHUP (closing the terminal) would otherwise skip the finally
+# blocks that stop Firefox and delete its temporary profile.
+@contextlib.contextmanager
+def exit_cleanly_on_termination():
+    def terminate(signal_number, frame):
+        raise SystemExit(128 + signal_number)
+
+    previous_handlers = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        signal_number = getattr(signal, name, None)
+        if signal_number is None:
+            continue
+        try:
+            previous_handlers[signal_number] = signal.signal(signal_number, terminate)
+        except ValueError:
+            # Signal handlers can only be installed from the main thread.
+            pass
+
+    try:
+        yield
+    finally:
+        for signal_number, handler in previous_handlers.items():
+            signal.signal(signal_number, handler)
 
 
 FIREFOX_EXECUTABLE_NAMES = ("firefox", "firefox-esr", "firefox-bin")
@@ -895,6 +979,14 @@ def capture_saml_response_with_firefox(
     geckodriver_executable="geckodriver",
     google_username=None,
 ):
+    removed = remove_orphaned_capture_directories()
+    if removed:
+        print(
+            "Removed {} temporary Firefox profile(s) left by earlier captures.".format(
+                removed,
+            ),
+            flush=True,
+        )
     temp_root = select_browser_capture_temp_root()
     if Path(temp_root) != Path(tempfile.gettempdir()):
         print(
@@ -913,10 +1005,13 @@ def capture_saml_response_with_firefox(
     )
 
     try:
-        with tempfile.TemporaryDirectory(
-            prefix='aws-google-auth-firefox-',
+        with exit_cleanly_on_termination(), tempfile.TemporaryDirectory(
+            prefix=BROWSER_CAPTURE_TEMP_PREFIX,
             dir=temp_root,
+            # A failed removal is retried by the next capture's sweep.
+            ignore_cleanup_errors=True,
         ) as temp_dir:
+            (Path(temp_dir) / BROWSER_CAPTURE_OWNER_FILE).write_text(str(os.getpid()))
             # Firefox must exit before its temporary profile is removed.
             try:
                 extension_path = Path(temp_dir) / "aws_google_auth_saml_capture.xpi"

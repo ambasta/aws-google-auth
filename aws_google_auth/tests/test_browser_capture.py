@@ -2,6 +2,7 @@ import json
 import signal
 import subprocess
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -570,6 +571,96 @@ class TestBrowserCapture(unittest.TestCase):
 
         self.assertEqual([True], profile_existed_at_quit)
         self.assertFalse(extension_paths[0].parent.exists())
+
+    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
+    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    def test_capture_marks_its_temporary_directory_with_owner(
+        self,
+        mock_build_extension,
+        mock_webdriver,
+    ):
+        driver = Mock()
+        driver.current_url = captured_url("YWJjZA==")
+        mock_webdriver.return_value = driver
+        owners = []
+        driver.install_addon.side_effect = lambda path: owners.append(
+            (Path(path).parent / browser_capture.BROWSER_CAPTURE_OWNER_FILE).read_text()
+        )
+
+        browser_capture.capture_saml_response_with_firefox(
+            "https://accounts.google.com/o/saml2/initsso",
+            timeout_seconds=120,
+        )
+
+        self.assertEqual([str(browser_capture.os.getpid())], owners)
+
+    @unittest.skipUnless(hasattr(signal, "SIGHUP"), "requires POSIX signals")
+    @patch('aws_google_auth.browser_capture.FirefoxWebDriver')
+    @patch('aws_google_auth.browser_capture.build_firefox_capture_extension', spec=True)
+    def test_capture_cleans_up_when_terminal_is_closed(
+        self,
+        mock_build_extension,
+        mock_webdriver,
+    ):
+        driver = Mock()
+        mock_webdriver.return_value = driver
+        extension_paths = []
+        driver.install_addon.side_effect = extension_paths.append
+        driver.get.side_effect = lambda url: browser_capture.os.kill(
+            browser_capture.os.getpid(),
+            signal.SIGHUP,
+        )
+        previous_handler = signal.getsignal(signal.SIGHUP)
+
+        with self.assertRaises(SystemExit):
+            browser_capture.capture_saml_response_with_firefox(
+                "https://accounts.google.com/o/saml2/initsso",
+                timeout_seconds=120,
+            )
+
+        driver.quit.assert_called_once_with()
+        self.assertFalse(extension_paths[0].parent.exists())
+        self.assertIs(previous_handler, signal.getsignal(signal.SIGHUP))
+
+    def make_capture_directory(self, root, name, owner=None, age_seconds=0):
+        path = Path(root) / name
+        path.mkdir()
+        (path / "cookies.sqlite").write_text("cookie", encoding="utf-8")
+        if owner is not None:
+            (path / browser_capture.BROWSER_CAPTURE_OWNER_FILE).write_text(str(owner))
+        modified = time.time() - age_seconds
+        browser_capture.os.utime(path, (modified, modified))
+        return path
+
+    @unittest.skipUnless(browser_capture.os.name == "posix", "owner check is POSIX only")
+    @patch('aws_google_auth.browser_capture.process_is_running', spec=True)
+    def test_orphaned_capture_directories_are_removed(self, mock_is_running):
+        live_process_id = 1234
+        mock_is_running.side_effect = lambda process_id: process_id == live_process_id
+        old = browser_capture.BROWSER_CAPTURE_ORPHAN_AGE_SECONDS + 60
+        prefix = browser_capture.BROWSER_CAPTURE_TEMP_PREFIX
+
+        with tempfile.TemporaryDirectory() as root:
+            dead_owner = self.make_capture_directory(root, prefix + "dead", owner=4321)
+            live_owner = self.make_capture_directory(root, prefix + "live", owner=live_process_id, age_seconds=old)
+            old_unowned = self.make_capture_directory(root, prefix + "old", age_seconds=old)
+            new_unowned = self.make_capture_directory(root, prefix + "new")
+            unrelated = self.make_capture_directory(root, "unrelated", owner=4321, age_seconds=old)
+
+            removed = browser_capture.remove_orphaned_capture_directories([root])
+
+            self.assertEqual(2, removed)
+            self.assertFalse(dead_owner.exists())
+            self.assertFalse(old_unowned.exists())
+            self.assertTrue(live_owner.exists())
+            self.assertTrue(new_unowned.exists())
+            self.assertTrue(unrelated.exists())
+
+    def test_orphan_sweep_skips_missing_temp_roots(self):
+        self.assertEqual(
+            0,
+            browser_capture.remove_orphaned_capture_directories(["/nonexistent/aws-google-auth"]),
+        )
 
     def test_firefox_profile_storage_copy_is_limited_to_auth_origins(self):
         self.assertTrue(
