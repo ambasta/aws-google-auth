@@ -11,11 +11,21 @@ import sys
 import tempfile
 import time
 import zipfile
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import FrameType
+from typing import IO, NoReturn
 from urllib import parse as urllib_parse
 
 import requests
+
+# Anything json.loads() can produce; WebDriver command results are
+# command-specific, so callers narrow the value they expect.
+type JSONValue = str | int | float | bool | list[JSONValue] | dict[str, JSONValue] | None
+type StrPath = str | os.PathLike[str]
+type ProgressCallback = Callable[[str], object]
+type SignalHandler = Callable[[int, FrameType | None], object] | int | None
 
 ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
 DEFAULT_BROWSER_TIMEOUT_SECONDS = 600
@@ -50,16 +60,16 @@ class WebDriverError(RuntimeError):
 @dataclass
 class BrowserCaptureResult:
     saml_response: str
-    account_aliases: dict = field(default_factory=dict)
-    aws_roles: list = field(default_factory=list)
+    account_aliases: dict[str, str] = field(default_factory=dict)
+    aws_roles: list[JSONValue] = field(default_factory=list)
 
 
-def browser_capture_temp_root_candidates():
+def browser_capture_temp_root_candidates() -> list[str]:
     configured_root = os.environ.get("AWS_GOOGLE_AUTH_TMPDIR")
     default_root = tempfile.gettempdir()
     home_cache_root = Path.home() / ".cache" / "aws-google-auth" / "tmp"
     xdg_cache_root = Path(os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")) / "aws-google-auth" / "tmp"
-    candidates = []
+    candidates: list[str] = []
     for candidate in (
         configured_root,
         default_root,
@@ -71,8 +81,8 @@ def browser_capture_temp_root_candidates():
     return candidates
 
 
-def select_browser_capture_temp_root():
-    checked = []
+def select_browser_capture_temp_root() -> str:
+    checked: list[str] = []
 
     for candidate in browser_capture_temp_root_candidates():
         checked.append(candidate)
@@ -94,7 +104,7 @@ def select_browser_capture_temp_root():
     )
 
 
-def process_is_running(process_id):
+def process_is_running(process_id: int) -> bool:
     try:
         os.kill(process_id, 0)
     except ProcessLookupError:
@@ -104,7 +114,7 @@ def process_is_running(process_id):
     return True
 
 
-def is_orphaned_capture_directory(path):
+def is_orphaned_capture_directory(path: Path) -> bool:
     try:
         owner_process_id = int((path / BROWSER_CAPTURE_OWNER_FILE).read_text())
     except OSError, ValueError:
@@ -123,7 +133,7 @@ def is_orphaned_capture_directory(path):
 
 # Profile copies hold Google session cookies, so remove any left behind by a
 # capture that was killed before it could clean up.
-def remove_orphaned_capture_directories(temp_roots=None):
+def remove_orphaned_capture_directories(temp_roots: Iterable[StrPath] | None = None) -> int:
     removed = 0
     for root in temp_roots or browser_capture_temp_root_candidates():
         try:
@@ -147,11 +157,11 @@ def remove_orphaned_capture_directories(temp_roots=None):
 # SIGTERM and SIGHUP (closing the terminal) would otherwise skip the finally
 # blocks that stop Firefox and delete its temporary profile.
 @contextlib.contextmanager
-def exit_cleanly_on_termination():
-    def terminate(signal_number, frame):
+def exit_cleanly_on_termination() -> Iterator[None]:
+    def terminate(signal_number: int, frame: FrameType | None) -> NoReturn:
         raise SystemExit(128 + signal_number)
 
-    previous_handlers = {}
+    previous_handlers: dict[int, SignalHandler] = {}
     for name in ("SIGTERM", "SIGHUP"):
         signal_number = getattr(signal, name, None)
         if signal_number is None:
@@ -175,7 +185,7 @@ FIREFOX_EXECUTABLE_PATHS = (
 )
 
 
-def find_firefox_executable():
+def find_firefox_executable() -> str | None:
     for name in FIREFOX_EXECUTABLE_NAMES:
         path = shutil.which(name)
         if path:
@@ -188,7 +198,7 @@ def find_firefox_executable():
     return None
 
 
-def firefox_profile_roots():
+def firefox_profile_roots() -> list[Path]:
     home = Path.home()
     if sys.platform == "darwin":
         return [home / "Library" / "Application Support" / "Firefox"]
@@ -205,17 +215,17 @@ def firefox_profile_roots():
     ]
 
 
-def read_firefox_ini(path):
+def read_firefox_ini(path: StrPath) -> configparser.RawConfigParser:
     parser = configparser.RawConfigParser(strict=False)
     with contextlib.suppress(OSError, configparser.Error):
         parser.read(path, encoding="utf-8")
     return parser
 
 
-def default_firefox_profile_candidates(root):
+def default_firefox_profile_candidates(root: Path) -> Iterator[Path]:
     installs = read_firefox_ini(root / "installs.ini")
     profiles = read_firefox_ini(root / "profiles.ini")
-    candidates = []
+    candidates: list[tuple[str | None, bool]] = []
 
     # Since Firefox 67 each installation records the profile it opens by
     # default; profiles.ini may carry the same data as [Install<hash>].
@@ -249,7 +259,7 @@ def default_firefox_profile_candidates(root):
             yield root / path if is_relative else Path(path)
 
 
-def find_default_firefox_profile(roots=None):
+def find_default_firefox_profile(roots: Iterable[StrPath] | None = None) -> str | None:
     for root in roots or firefox_profile_roots():
         for candidate in default_firefox_profile_candidates(Path(root)):
             if candidate.is_dir():
@@ -277,7 +287,7 @@ FIREFOX_PROFILE_CLONE_FILES = {
 FIREFOX_PROFILE_SQLITE_SUFFIXES = ("-shm", "-wal")
 
 
-def extract_saml_response_from_post_data(post_data):
+def extract_saml_response_from_post_data(post_data: str | None) -> str | None:
     if not post_data or "SAMLResponse" not in post_data:
         return None
 
@@ -288,7 +298,7 @@ def extract_saml_response_from_post_data(post_data):
     return None
 
 
-def build_firefox_capture_extension(output_path):
+def build_firefox_capture_extension(output_path: StrPath) -> None:
     manifest = {
         "manifest_version": 2,
         "name": "AWS Google Auth SAML Capture",
@@ -523,7 +533,7 @@ browser.storage.local.get(["awsRoles"]).then((data) => {
         archive.writestr("captured.js", captured_js)
 
 
-def captured_result_from_url(url):
+def captured_result_from_url(url: str) -> BrowserCaptureResult | None:
     parsed_url = urllib_parse.urlsplit(url)
     if parsed_url.scheme != "moz-extension" or parsed_url.path != "/captured.html":
         return None
@@ -549,8 +559,8 @@ def captured_result_from_url(url):
     )
 
 
-def account_aliases_from_browser_roles(aws_roles):
-    aliases = {}
+def account_aliases_from_browser_roles(aws_roles: Iterable[JSONValue] | None) -> dict[str, str]:
+    aliases: dict[str, str] = {}
     for role in aws_roles or []:
         if not isinstance(role, dict):
             continue
@@ -563,11 +573,11 @@ def account_aliases_from_browser_roles(aws_roles):
     return aliases
 
 
-def css_string_literal(value):
+def css_string_literal(value: str) -> str:
     return '"{}"'.format(str(value).replace("\\", "\\\\").replace('"', '\\"'))
 
 
-def xpath_string_literal(value):
+def xpath_string_literal(value: str) -> str:
     value = str(value)
     if "'" not in value:
         return f"'{value}'"
@@ -578,7 +588,7 @@ def xpath_string_literal(value):
     return "concat({})".format(', "\'", '.join(f"'{part}'" for part in parts))
 
 
-def click_google_account_if_present(driver, google_username):
+def click_google_account_if_present(driver: FirefoxWebDriver, google_username: str | None) -> bool:
     if not google_username:
         return False
 
@@ -615,7 +625,7 @@ def click_google_account_if_present(driver, google_username):
     return False
 
 
-def is_google_account_chooser_url(url):
+def is_google_account_chooser_url(url: str) -> bool:
     parsed_url = urllib_parse.urlsplit(url)
     return all(
         (
@@ -626,7 +636,11 @@ def is_google_account_chooser_url(url):
     )
 
 
-def clone_firefox_profile(source_path, target_path, progress=None):
+def clone_firefox_profile(
+    source_path: StrPath,
+    target_path: StrPath,
+    progress: ProgressCallback | None = None,
+) -> str:
     source = Path(source_path).expanduser()
     target = Path(target_path)
 
@@ -636,7 +650,7 @@ def clone_firefox_profile(source_path, target_path, progress=None):
     target.mkdir(parents=True)
     copied_items = 0
 
-    def report(message):
+    def report(message: str) -> None:
         if progress:
             progress(message)
 
@@ -672,14 +686,14 @@ def clone_firefox_profile(source_path, target_path, progress=None):
     return str(target)
 
 
-def copy_firefox_site_storage(source, target, progress=None):
+def copy_firefox_site_storage(source: Path, target: Path, progress: ProgressCallback | None = None) -> int:
     source_storage = source / "storage"
     if not source_storage.exists():
         return 0
 
     copied_items = 0
 
-    def report(message):
+    def report(message: str) -> None:
         if progress:
             progress(message)
 
@@ -698,23 +712,23 @@ def copy_firefox_site_storage(source, target, progress=None):
     return copied_items
 
 
-def should_copy_firefox_storage_origin(origin_name):
+def should_copy_firefox_storage_origin(origin_name: str) -> bool:
     return FIREFOX_AUTH_STORAGE_ORIGIN_PATTERN.match(origin_name) is not None
 
 
-def find_free_port():
+def find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
-def unwrap_webdriver_response(response):
+def unwrap_webdriver_response(response: requests.Response) -> JSONValue:
     try:
         payload = response.json()
     except ValueError as ex:
         raise WebDriverError(response.text) from ex
 
-    value = payload.get("value")
+    value: JSONValue = payload.get("value")
     if response.status_code >= 400:
         details = value if isinstance(value, dict) else {}
         raise WebDriverError(details.get("message") or details.get("error") or str(value))
@@ -722,53 +736,62 @@ def unwrap_webdriver_response(response):
     return value
 
 
+def webdriver_object(value: JSONValue) -> dict[str, JSONValue]:
+    if not isinstance(value, dict):
+        raise WebDriverError(f"Expected a WebDriver object, got: {value!r}")
+    return value
+
+
+def webdriver_string(value: JSONValue) -> str:
+    if not isinstance(value, str):
+        raise WebDriverError(f"Expected a WebDriver string, got: {value!r}")
+    return value
+
+
 class FirefoxWebDriver:
     def __init__(
         self,
-        geckodriver_executable="geckodriver",
-        request_timeout_seconds=DEFAULT_BROWSER_TIMEOUT_SECONDS,
-        temp_directory=None,
-    ):
+        geckodriver_executable: str = "geckodriver",
+        request_timeout_seconds: float = DEFAULT_BROWSER_TIMEOUT_SECONDS,
+        temp_directory: str | None = None,
+    ) -> None:
         self.geckodriver_executable = geckodriver_executable
         self.request_timeout_seconds = request_timeout_seconds
         self.temp_directory = temp_directory
         self.port = find_free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        self.process = None
-        self.session_id = None
-        self.request_deadline = None
+        self.process: subprocess.Popen[str] | None = None
+        self.session_id: str | None = None
+        self.request_deadline: float | None = None
         self.request_failed = False
-        self.log_file = None
-        self.process_group_id = None
+        self.log_file: IO[str] | None = None
+        self.process_group_id: int | None = None
 
-    def start(self):
+    def start(self) -> None:
         # Closed in quit(), once geckodriver has exited.
-        self.log_file = tempfile.TemporaryFile(  # noqa: SIM115
+        log_file = self.log_file = tempfile.TemporaryFile(  # noqa: SIM115
             mode="w+t",
             encoding="utf-8",
             dir=self.temp_directory,
         )
-        popen_kwargs = {
-            "stdout": self.log_file,
-            "stderr": subprocess.STDOUT,
-            "text": True,
-        }
-        if os.name == "posix":
-            popen_kwargs["start_new_session"] = True
-        self.process = subprocess.Popen(
+        process = self.process = subprocess.Popen(
             [self.geckodriver_executable, "--port", str(self.port), "--host", "127.0.0.1"],
-            **popen_kwargs,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+            # Lets stop_process() signal geckodriver and Firefox as one group.
+            start_new_session=os.name == "posix",
         )
-        process_id = getattr(self.process, "pid", None)
+        process_id = getattr(process, "pid", None)
         if os.name == "posix" and isinstance(process_id, int) and process_id > 0:
             self.process_group_id = process_id
 
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            if self.process.poll() is not None:
-                self.log_file.flush()
-                self.log_file.seek(0)
-                output = self.log_file.read()
+            if process.poll() is not None:
+                log_file.flush()
+                log_file.seek(0)
+                output = log_file.read()
                 raise WebDriverError(output.strip() or "geckodriver exited before startup")
 
             try:
@@ -785,7 +808,13 @@ class FirefoxWebDriver:
 
         raise WebDriverError("Timed out waiting for geckodriver to start")
 
-    def request(self, method, path, body=None, timeout_seconds=None):
+    def request(
+        self,
+        method: str,
+        path: str,
+        body: Mapping[str, JSONValue] | None = None,
+        timeout_seconds: float | None = None,
+    ) -> JSONValue:
         if timeout_seconds is None:
             timeout_seconds = self.request_timeout_seconds
         request_timeout_seconds = min(
@@ -813,12 +842,12 @@ class FirefoxWebDriver:
             raise
         return unwrap_webdriver_response(response)
 
-    def create_session(self, firefox_executable=None, profile_path=None):
-        args = ["-new-instance", "-foreground"]
+    def create_session(self, firefox_executable: str | None = None, profile_path: str | None = None) -> None:
+        args: list[JSONValue] = ["-new-instance", "-foreground"]
         if profile_path:
             args.extend(["-profile", profile_path])
 
-        firefox_options = {
+        firefox_options: dict[str, JSONValue] = {
             "args": args,
             "prefs": {
                 "browser.shell.checkDefaultBrowser": False,
@@ -843,66 +872,66 @@ class FirefoxWebDriver:
                 },
             },
         )
-        self.session_id = value["sessionId"]
+        self.session_id = webdriver_string(webdriver_object(value)["sessionId"])
 
-    def install_addon(self, path):
+    def install_addon(self, path: StrPath) -> None:
         self.request(
             "POST",
             f"/session/{self.session_id}/moz/addon/install",
             {"path": str(path), "temporary": True},
         )
 
-    def set_window_rect(self, x=0, y=0, width=1280, height=900):
+    def set_window_rect(self, x: int = 0, y: int = 0, width: int = 1280, height: int = 900) -> None:
         self.request(
             "POST",
             f"/session/{self.session_id}/window/rect",
             {"x": x, "y": y, "width": width, "height": height},
         )
 
-    def get(self, url):
+    def get(self, url: str) -> None:
         self.request("POST", f"/session/{self.session_id}/url", {"url": url})
 
     @property
-    def current_url(self):
-        return self.request("GET", f"/session/{self.session_id}/url")
+    def current_url(self) -> str:
+        return webdriver_string(self.request("GET", f"/session/{self.session_id}/url"))
 
-    def find_element_by(self, using, value):
-        value = self.request(
+    def find_element_by(self, using: str, value: str) -> str:
+        element = self.request(
             "POST",
             f"/session/{self.session_id}/element",
             {"using": using, "value": value},
         )
-        return value[ELEMENT_KEY]
+        return webdriver_string(webdriver_object(element)[ELEMENT_KEY])
 
-    def find_element(self, css_selector):
+    def find_element(self, css_selector: str) -> str:
         return self.find_element_by("css selector", css_selector)
 
-    def find_element_by_xpath(self, xpath):
+    def find_element_by_xpath(self, xpath: str) -> str:
         return self.find_element_by("xpath", xpath)
 
-    def click_element(self, element_id):
+    def click_element(self, element_id: str) -> JSONValue:
         return self.request(
             "POST",
             f"/session/{self.session_id}/element/{element_id}/click",
             {},
         )
 
-    def get_element_attribute(self, element_id, attribute_name):
+    def get_element_attribute(self, element_id: str, attribute_name: str) -> JSONValue:
         return self.request(
             "GET",
             f"/session/{self.session_id}/element/{element_id}/attribute/{attribute_name}",
         )
 
-    def get_element_property(self, element_id, property_name):
+    def get_element_property(self, element_id: str, property_name: str) -> JSONValue:
         return self.request(
             "GET",
             f"/session/{self.session_id}/element/{element_id}/property/{property_name}",
         )
 
-    def title(self):
-        return self.request("GET", f"/session/{self.session_id}/title")
+    def title(self) -> str:
+        return webdriver_string(self.request("GET", f"/session/{self.session_id}/title"))
 
-    def signal_process(self, signal_number, force=False):
+    def signal_process(self, signal_number: int, force: bool = False) -> None:
         if self.process_group_id is not None and hasattr(os, "killpg"):
             try:
                 os.killpg(self.process_group_id, signal_number)
@@ -910,6 +939,8 @@ class FirefoxWebDriver:
             except OSError:
                 pass
 
+        if self.process is None:
+            return
         try:
             if force:
                 self.process.kill()
@@ -918,8 +949,9 @@ class FirefoxWebDriver:
         except OSError:
             pass
 
-    def stop_process(self):
-        if not self.process:
+    def stop_process(self) -> None:
+        process = self.process
+        if process is None:
             return
 
         has_process_group = self.process_group_id is not None and hasattr(os, "killpg")
@@ -931,15 +963,15 @@ class FirefoxWebDriver:
             time.sleep(WEBDRIVER_PROCESS_GROUP_GRACE_SECONDS)
             self.signal_process(WEBDRIVER_FORCE_KILL_SIGNAL, force=True)
         try:
-            self.process.wait(timeout=WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS)
+            process.wait(timeout=WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             self.signal_process(WEBDRIVER_FORCE_KILL_SIGNAL, force=True)
             with contextlib.suppress(subprocess.TimeoutExpired):
-                self.process.wait(timeout=WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS)
+                process.wait(timeout=WEBDRIVER_PROCESS_EXIT_TIMEOUT_SECONDS)
         self.process = None
         self.process_group_id = None
 
-    def quit(self):
+    def quit(self) -> None:
         self.request_deadline = None
         if self.session_id and not self.request_failed:
             with contextlib.suppress(requests.RequestException, WebDriverError):
@@ -958,13 +990,13 @@ class FirefoxWebDriver:
 
 
 def capture_saml_response_with_firefox(
-    login_url,
-    timeout_seconds=DEFAULT_BROWSER_TIMEOUT_SECONDS,
-    executable_path=None,
-    profile_path=None,
-    geckodriver_executable="geckodriver",
-    google_username=None,
-):
+    login_url: str,
+    timeout_seconds: float = DEFAULT_BROWSER_TIMEOUT_SECONDS,
+    executable_path: str | None = None,
+    profile_path: str | None = None,
+    geckodriver_executable: str = "geckodriver",
+    google_username: str | None = None,
+) -> BrowserCaptureResult:
     removed = remove_orphaned_capture_directories()
     if removed:
         print(

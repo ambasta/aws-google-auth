@@ -236,10 +236,7 @@ class TestBrowserCapture(unittest.TestCase):
         popen_kwargs = mock_popen.call_args.kwargs
         self.assertIsNot(subprocess.PIPE, popen_kwargs["stdout"])
         self.assertEqual(subprocess.STDOUT, popen_kwargs["stderr"])
-        if browser_capture.os.name == "posix":
-            self.assertTrue(popen_kwargs["start_new_session"])
-        else:
-            self.assertNotIn("start_new_session", popen_kwargs)
+        self.assertEqual(browser_capture.os.name == "posix", popen_kwargs["start_new_session"])
         driver.quit()
 
     def test_firefox_webdriver_skips_session_delete_after_failed_request(self):
@@ -516,6 +513,7 @@ class TestBrowserCapture(unittest.TestCase):
             )
         )
 
+        assert result is not None
         self.assertEqual("YWJjZA==", result.saml_response)
         self.assertEqual({"111111111111": "example-prod"}, result.account_aliases)
 
