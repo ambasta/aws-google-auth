@@ -21,7 +21,7 @@ class TestAmazon(unittest.TestCase):
             return fp.read().encode("utf-8")
 
     def test_sts_client(self):
-        a = amazon.Amazon(self.valid_config, "dummy-encoded-saml")
+        a = amazon.Amazon(self.valid_config, b"dummy-encoded-saml")
         self.assertEqual(str(a.sts_client.__class__), "<class 'botocore.client.STS'>")
 
     def test_role_extraction(self):
@@ -62,7 +62,7 @@ class TestAmazon(unittest.TestCase):
     def test_invalid_saml_bad_input(self):
         self.assertFalse(amazon.Amazon.is_valid_saml_assertion(None))
         self.assertFalse(amazon.Amazon.is_valid_saml_assertion("Malformed Base64"))
-        self.assertFalse(amazon.Amazon.is_valid_saml_assertion(123456))
+        self.assertFalse(amazon.Amazon.is_valid_saml_assertion(123456))  # ty: ignore[invalid-argument-type]
         self.assertFalse(amazon.Amazon.is_valid_saml_assertion(""))
         self.assertFalse(amazon.Amazon.is_valid_saml_assertion("QmFkIFhNTA=="))  # Bad XML
 
@@ -72,7 +72,7 @@ class TestAmazon(unittest.TestCase):
 
     @mock.patch.dict(os.environ, {"AWS_PROFILE": "xxx-xxxx", "DEFAULT_AWS_PROFILE": "blart"})
     def test_sts_client_with_invalid_profile(self):
-        a = amazon.Amazon(self.valid_config, "dummy-encoded-saml")
+        a = amazon.Amazon(self.valid_config, b"dummy-encoded-saml")
 
         self.assertIsNotNone(a.sts_client)
 
