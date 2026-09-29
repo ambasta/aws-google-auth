@@ -3,10 +3,24 @@ import os
 import sys
 from collections import OrderedDict
 
-from tabulate import tabulate
-
 
 class Util:
+    # A plain-text table: numbers are right-aligned, everything else is
+    # left-aligned, with a dashed rule under the headers.
+    @staticmethod
+    def format_table(rows, headers):
+        columns = list(zip(headers, *rows, strict=True))
+        widths = [max(len(str(cell)) for cell in column) for column in columns]
+        numeric = [all(isinstance(cell, int) for cell in column[1:]) for column in columns]
+
+        def line(cells):
+            return "  ".join(
+                str(cell).rjust(width) if right else str(cell).ljust(width)
+                for cell, width, right in zip(cells, widths, numeric, strict=True)
+            ).rstrip()
+
+        return "\n".join([line(headers), line("-" * width for width in widths), *(line(row) for row in rows)])
+
     @staticmethod
     def get_input(prompt):
         return input(prompt).strip()
@@ -40,12 +54,7 @@ class Util:
                 enriched_roles_tab.append([i + 1, role_property[0], role_property[1]])
 
             while True:
-                print(
-                    tabulate(
-                        enriched_roles_tab,
-                        headers=["No", "AWS account", "Role"],
-                    )
-                )
+                print(Util.format_table(enriched_roles_tab, headers=["No", "AWS account", "Role"]))
                 prompt = "Type the number (1 - {:d}) of the role to assume: ".format(len(enriched_roles))
                 choice = Util.get_input(prompt)
 

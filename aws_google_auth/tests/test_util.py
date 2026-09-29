@@ -8,6 +8,21 @@ from aws_google_auth import util
 
 
 class TestUtilMethods(unittest.TestCase):
+    def test_format_table(self):
+        table = util.Util.format_table(
+            [[1, "prod", "Admin"], [10, "sandbox-account", "PowerUser"]],
+            headers=["No", "AWS account", "Role"],
+        )
+        self.assertEqual(
+            table.splitlines(),
+            [
+                "No  AWS account      Role",
+                "--  ---------------  ---------",
+                " 1  prod             Admin",
+                "10  sandbox-account  PowerUser",
+            ],
+        )
+
     def test_coalesce_no_arguments(self):
         self.assertEqual(util.Util.coalesce(), None)
 
